@@ -2,6 +2,28 @@ import XCTest
 @testable import VibeCore
 
 final class ScriptTextTests: XCTestCase {
+    func testQuestionsAreSplitAndCleaned() {
+        let text = """
+        Here are a few questions:
+        1. What does success look like for you by March?
+        2) Who else needs to sign off on the scope?
+        - Is the budget fixed, or is there room if we add subscriptions?
+        • Which payment gateway do you use today?
+        """
+        XCTAssertEqual(ScriptText.questions(from: text), [
+            "What does success look like for you by March?",
+            "Who else needs to sign off on the scope?",
+            "Is the budget fixed, or is there room if we add subscriptions?",
+            "Which payment gateway do you use today?",
+        ])
+    }
+
+    func testQuestionStillStreamingIsShown() {
+        XCTAssertEqual(ScriptText.questions(from: "What is your timeline?\nAnd who"), ["What is your timeline?", "And who"])
+        XCTAssertEqual(ScriptText.questions(from: ""), [])
+        XCTAssertEqual(ScriptText.questions(from: "Sure, here they are.\nWhat is your timeline?"), ["What is your timeline?"])
+    }
+
     func testSplitFirstSentence() {
         let (first, rest) = ScriptText.splitFirstSentence("It usually lands around $2.5k. That covers design and build. Happy to break it down.")
         XCTAssertEqual(first, "It usually lands around $2.5k.")

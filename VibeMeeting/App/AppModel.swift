@@ -54,7 +54,7 @@ final class AppModel {
 
     // MARK: - Meetings
 
-    func startMeeting(name: String, context: [ContextItem], preset: StylePreset, instructions: String) async {
+    func startMeeting(name: String, goal: String = "", context: [ContextItem], preset: StylePreset, instructions: String) async {
         if let previous = activeSession {
             let previousID = previous.id
             let wasActive = previous.isActive
@@ -77,6 +77,7 @@ final class AppModel {
             presetID: preset.id,
             presetName: preset.name,
             meetingInstructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+            goal: goal.trimmingCharacters(in: .whitespacesAndNewlines),
             context: context,
             replyModel: settings.replyModelID
         )

@@ -11,6 +11,7 @@ struct OverlayView: View {
     var body: some View {
         VStack(spacing: 0) {
             OverlayHeader(controller: controller)
+            GoalLine()
             if !session.notices.isEmpty {
                 NoticeList()
             }
@@ -155,6 +156,63 @@ private struct LevelMeter: View {
     }
 }
 
+// MARK: - Goal
+
+/// The meeting goal under the header; click to set or change it.
+private struct GoalLine: View {
+    @Environment(MeetingSession.self) private var session
+    @State private var editing = false
+    @State private var draft = ""
+
+    var body: some View {
+        let goal = session.record.goal
+        Button {
+            draft = goal
+            editing = true
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: "target")
+                    .font(.caption2)
+                Text(goal.isEmpty ? "Set a goal for this meeting" : goal)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(goal.isEmpty ? HierarchicalShapeStyle.tertiary : HierarchicalShapeStyle.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Replies and Ask questions steer toward this goal. Click to change it.")
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
+        .popover(isPresented: $editing) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Meeting goal").font(.headline)
+                TextField("What do you want from this call?", text: $draft, axis: .vertical)
+                    .lineLimit(2...5)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(save)
+                HStack {
+                    Text("Used from the next reply on.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Save", action: save)
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(12)
+            .frame(width: 340)
+        }
+    }
+
+    private func save() {
+        session.setGoal(draft)
+        editing = false
+    }
+}
+
 // MARK: - Notices
 
 private struct NoticeList: View {
@@ -196,7 +254,7 @@ private struct NoticeList: View {
 
 private struct HotkeyHints: View {
     var body: some View {
-        Text("\(Hotkeys.label(.reply)) Reply · \(Hotkeys.label(.answer))–\(Hotkeys.label(.pushBack)) Intent · \(Hotkeys.label(.steer)) Steer · \(Hotkeys.label(.regenerate)) Regenerate · \(Hotkeys.label(.shorter)) Shorter · \(Hotkeys.label(.toggleOverlay)) Hide")
+        Text("\(Hotkeys.label(.reply)) Reply · \(Hotkeys.label(.answer))–\(Hotkeys.label(.pushBack)) Intent · \(Hotkeys.label(.askQuestions)) Questions · \(Hotkeys.label(.steer)) Steer · \(Hotkeys.label(.regenerate)) Regenerate · \(Hotkeys.label(.shorter)) Shorter · \(Hotkeys.label(.toggleOverlay)) Hide")
             .font(.caption2)
             .foregroundStyle(.tertiary)
             .lineLimit(1)

@@ -1,10 +1,11 @@
 import SwiftUI
 import VibeCore
 
-/// Quick setup right before a call: name, context, reply style, instructions.
+/// Quick setup right before a call: name, goal, context, reply style, instructions.
 struct NewMeetingView: View {
     @Environment(AppModel.self) private var app
     @State private var name = ""
+    @State private var goal = ""
     @State private var items: [ContextItem] = []
     @State private var notes = ""
     @State private var presetID: String?
@@ -20,6 +21,20 @@ struct NewMeetingView: View {
 
                     TextField("Meeting name (optional)", text: $name)
                         .textFieldStyle(.roundedBorder)
+
+                    section("Goal") {
+                        TextField(
+                            "What do you want from this call? e.g. Agree on the scope of milestone 1 and get a go-ahead for the proposal.",
+                            text: $goal,
+                            axis: .vertical
+                        )
+                        .lineLimit(2...4)
+                        .textFieldStyle(.roundedBorder)
+                        Text("Replies and Ask questions steer toward it, and the recap says how far you got. Optional; you can change it during the call.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     section("Context") {
                         ContextEditor(items: $items, notes: $notes)
@@ -114,9 +129,10 @@ struct NewMeetingView: View {
         let preset = app.settings.preset(id: presetBinding.wrappedValue)
         Task {
             app.windows.close("new-meeting")
-            await app.startMeeting(name: name, context: context, preset: preset, instructions: instructions)
+            await app.startMeeting(name: name, goal: goal, context: context, preset: preset, instructions: instructions)
             // Reset for next time; the window is reused.
             name = ""
+            goal = ""
             items = []
             notes = ""
             instructions = ""

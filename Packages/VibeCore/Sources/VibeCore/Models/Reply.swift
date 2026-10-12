@@ -7,6 +7,8 @@ public enum ReplyIntent: String, Codable, Sendable, CaseIterable, Identifiable {
     case clarify
     case add
     case pushBack
+    /// Not a reply: questions to ask the other side (Ask questions).
+    case questions
 
     public var id: String { rawValue }
 
@@ -17,6 +19,7 @@ public enum ReplyIntent: String, Codable, Sendable, CaseIterable, Identifiable {
         case .clarify: return "Clarify"
         case .add: return "Add"
         case .pushBack: return "Push back"
+        case .questions: return "Questions"
         }
     }
 
@@ -36,6 +39,8 @@ public enum ReplyIntent: String, Codable, Sendable, CaseIterable, Identifiable {
             return "Acknowledge their point, then add one relevant idea drawn from the meeting context. Don't take over the conversation."
         case .pushBack:
             return "Disagree respectfully. Give the reason, then offer an alternative."
+        case .questions:
+            return Prompts.questionsTask
         }
     }
 }

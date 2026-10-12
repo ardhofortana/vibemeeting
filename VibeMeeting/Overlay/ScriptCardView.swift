@@ -3,7 +3,7 @@ import SwiftUI
 import VibeCore
 
 /// The script to read out loud. The first sentence is bold so the user can
-/// start talking while reading the rest.
+/// start talking while reading the rest. Ask questions results show as a list.
 struct ScriptCardView: View {
     @Environment(MeetingSession.self) private var session
 
@@ -32,16 +32,27 @@ struct ScriptCardView: View {
 
     @ViewBuilder
     private func content(for script: ReplyScript) -> some View {
+        let isQuestions = script.intent == .questions
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "arrowshape.turn.up.left")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text("“\(script.targetText)”")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .truncationMode(.head)
+                if isQuestions {
+                    Image(systemName: "questionmark.bubble")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(script.targetText.isEmpty ? "Questions to ask them" : "Questions toward: \(script.targetText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else {
+                    Image(systemName: "arrowshape.turn.up.left")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("“\(script.targetText)”")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.head)
+                }
                 Spacer(minLength: 4)
                 tags(for: script)
                 historyMenu
@@ -50,8 +61,10 @@ struct ScriptCardView: View {
             if script.text.isEmpty {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("Drafting…").foregroundStyle(.secondary)
+                    Text(isQuestions ? "Thinking of questions…" : "Drafting…").foregroundStyle(.secondary)
                 }
+            } else if isQuestions {
+                QuestionList(questions: ScriptText.questions(from: script.text))
             } else {
                 Text(Self.styled(ScriptText.sanitize(script.text)))
                     .font(.title3)
@@ -61,13 +74,20 @@ struct ScriptCardView: View {
 
             HStack(spacing: 8) {
                 Button("Regenerate") { session.regenerate() }
-                    .help("New script for the same target (\(Hotkeys.label(.regenerate)))")
-                Button("Shorter") { session.shorter() }
-                    .help("Shorten this script (\(Hotkeys.label(.shorter)))")
-                    .disabled(script.text.isEmpty)
-                Button("Copy") {
+                    .help(isQuestions
+                        ? "Different questions (\(Hotkeys.label(.regenerate)))"
+                        : "New script for the same target (\(Hotkeys.label(.regenerate)))")
+                if !isQuestions {
+                    Button("Shorter") { session.shorter() }
+                        .help("Shorten this script (\(Hotkeys.label(.shorter)))")
+                        .disabled(script.text.isEmpty)
+                }
+                Button(isQuestions ? "Copy all" : "Copy") {
+                    let text = isQuestions
+                        ? ScriptText.questions(from: script.text).joined(separator: "\n")
+                        : ScriptText.sanitize(script.text)
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(ScriptText.sanitize(script.text), forType: .string)
+                    NSPasteboard.general.setString(text, forType: .string)
                 }
                 .disabled(script.text.isEmpty)
                 Spacer()
@@ -85,7 +105,7 @@ struct ScriptCardView: View {
 
     @ViewBuilder
     private func tags(for script: ReplyScript) -> some View {
-        if script.intent != .auto {
+        if script.intent != .auto && script.intent != .questions {
             Text(script.intent.label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
         }
         if script.variant != .fresh {
@@ -103,7 +123,10 @@ struct ScriptCardView: View {
                 Button {
                     session.showScript(script)
                 } label: {
-                    Text(String(ScriptText.sanitize(script.text).prefix(70)))
+                    let preview = script.intent == .questions
+                        ? "Questions: " + (ScriptText.questions(from: script.text).first ?? "")
+                        : ScriptText.sanitize(script.text)
+                    Text(String(preview.prefix(70)))
                 }
             }
         } label: {
@@ -150,5 +173,42 @@ struct ScriptCardView: View {
             result += run
         }
         return result
+    }
+}
+
+/// Ask questions results: numbered, most useful first. Clicking one copies it.
+private struct QuestionList: View {
+    let questions: [String]
+    @State private var copied: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(questions.enumerated()), id: \.offset) { index, question in
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(question, forType: .string)
+                    copied = index
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(index + 1).")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                        Text(question)
+                            .font(index == 0 ? .title3.weight(.semibold) : .title3)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 4)
+                        if copied == index {
+                            Image(systemName: "checkmark")
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Copy this question")
+            }
+        }
     }
 }

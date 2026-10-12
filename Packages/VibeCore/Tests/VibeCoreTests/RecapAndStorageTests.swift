@@ -27,6 +27,33 @@ final class RecapTests: XCTestCase {
         XCTAssertThrowsError(try RecapPromptBuilder.parse("{\"nope\": true}"))
     }
 
+    func testOlderRecordsAndRecapsStillLoad() throws {
+        // A record saved before goals and goal progress existed.
+        let record = MeetingRecord(name: "Old", presetID: "friendly-pro", presetName: "Friendly Pro", recap: Recap(summary: "S"), replyModel: "claude-haiku-5-5")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        json.removeValue(forKey: "goal")
+        var recap = try XCTUnwrap(json["recap"] as? [String: Any])
+        recap.removeValue(forKey: "goal_progress")
+        json["recap"] = recap
+        let decoded = try JSONDecoder().decode(MeetingRecord.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(decoded.goal, "")
+        XCTAssertEqual(decoded.recap?.goalProgress, "")
+        XCTAssertEqual(decoded.name, "Old")
+    }
+
+    func testGoalInRecapRequestAndMarkdown() throws {
+        let record = MeetingRecord(name: "Acme", presetID: "friendly-pro", presetName: "Friendly Pro", goal: "Get a go-ahead for milestone 1.", replyModel: "claude-opus-5-5")
+        let request = RecapPromptBuilder(model: .opus55).recapRequest(record: record, aboutMe: "")
+        XCTAssertTrue(request.messages[0].content.last?.text?.contains("<meeting_goal>\nGet a go-ahead for milestone 1.\n</meeting_goal>") == true)
+        let schema = try XCTUnwrap(try JSONSerialization.jsonObject(with: JSONEncoder().encode(Recap.jsonSchema)) as? [String: Any])
+        XCTAssertTrue((schema["required"] as? [String])?.contains("goal_progress") == true)
+
+        let recap = Recap(summary: "We scoped it.", goalProgress: "Scope agreed; the go-ahead waits on their CFO.")
+        let markdown = recap.markdown(title: "Acme", date: nil, duration: nil, goal: record.goal)
+        XCTAssertTrue(markdown.contains("## Goal\nGet a go-ahead for milestone 1.\n\nScope agreed; the go-ahead waits on their CFO."))
+        XCTAssertFalse(Recap(summary: "x").markdown(title: "", date: nil, duration: nil).contains("## Goal"))
+    }
+
     func testRecapRoundTripsThroughCodable() throws {
         let recap = try RecapPromptBuilder.parse(Self.sampleJSON)
         let data = try JSONEncoder().encode(recap)

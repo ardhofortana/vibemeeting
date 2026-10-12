@@ -88,6 +88,12 @@ struct SessionDetailView: View {
             Text(metaLine(record))
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            if !record.goal.isEmpty {
+                Label(record.goal, systemImage: "target")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
             Text(statsLine(record))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -309,6 +315,14 @@ struct RecapView: View {
                 }
                 .controlSize(.small)
 
+                if !record.goal.isEmpty {
+                    section("Goal") {
+                        Text(record.goal).foregroundStyle(.secondary).textSelection(.enabled)
+                        if !recap.goalProgress.isEmpty {
+                            Text(recap.goalProgress).textSelection(.enabled)
+                        }
+                    }
+                }
                 section("Summary") {
                     Text(recap.summary).textSelection(.enabled)
                 }
@@ -339,7 +353,7 @@ struct RecapView: View {
     }
 
     private var markdown: String {
-        recap.markdown(title: record.displayName, date: record.startedAt, duration: record.duration)
+        recap.markdown(title: record.displayName, date: record.startedAt, duration: record.duration, goal: record.goal)
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

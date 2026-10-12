@@ -48,9 +48,9 @@ Saat pertama kali dibuka, jendela Welcome memandu tiga hal:
 
 | Fase | Langkah |
 | --- | --- |
-| Sebelum | Menu bar → **New meeting** → isi nama (opsional), drop file atau paste konteks → pilih **Reply style** → **Start listening** |
-| Selama | Subtitle mengalir di overlay. Tekan **⌥Space** setelah lawan bicara selesai bicara. Klik satu giliran untuk menjadikannya target, atau klik dua kali untuk memperbaiki salah dengar |
-| Setelah | **End meeting**. Rekap dibuat otomatis, lalu bisa di-**Copy as Markdown** atau di-export ke .md |
+| Sebelum | Menu bar → **New meeting** → isi nama (opsional) dan **Goal** (yang ingin dicapai dari meeting ini), drop file atau paste konteks → pilih **Reply style** → **Start listening** |
+| Selama | Subtitle mengalir di overlay. Tekan **⌥Space** setelah lawan bicara selesai bicara; script menjawab dulu, lalu mengarahkan pembicaraan ke goal. **Ask questions (⌥Q)** memberi 3–5 pertanyaan untuk lawan bicara supaya arah meeting makin jelas (bisa sebelum ada yang bicara; teks Steer memfokuskannya, klik satu pertanyaan untuk menyalinnya). Klik goal di bawah header untuk mengubahnya. Klik satu giliran untuk menjadikannya target, atau klik dua kali untuk memperbaiki salah dengar |
+| Setelah | **End meeting**. Rekap dibuat otomatis (termasuk seberapa jauh goal tercapai), lalu bisa di-**Copy as Markdown** atau di-export ke .md |
 
 Hotkey (bisa diubah di Settings → Hotkeys, dan hanya aktif selama meeting berjalan):
 
@@ -59,6 +59,7 @@ Hotkey (bisa diubah di Settings → Hotkeys, dan hanya aktif selama meeting berj
 | Reply (Auto) | ⌥Space |
 | Answer / Clarify / Add / Push back | ⌥1 / ⌥2 / ⌥3 / ⌥4 |
 | Steer (ketik arahan, Enter untuk generate) | ⌥⇧Space |
+| Ask questions | ⌥Q |
 | Regenerate / Shorter | ⌥R / ⌥S |
 | Show/hide overlay | ⌥H |
 
@@ -119,9 +120,9 @@ Setiap Reply adalah satu panggilan streaming. Prompt disusun dari bagian paling 
 
 1. Aturan output + About me (`system`) ← cache
 2. Konteks meeting (teks + screenshot) ← cache
-3. Gaya (preset + instruksi meeting) ← cache
+3. Gaya (preset + instruksi meeting + goal) ← cache
 4. Transkrip lama, per potongan 12 giliran yang sudah selesai ← cache di potongan terakhir
-5. Giliran terbaru + target + intent + Steer (tidak di-cache)
+5. Giliran terbaru + target + intent + Steer (tidak di-cache). **Ask questions** memakai prefix 1–4 yang sama persis, hanya bagian ini yang berbeda, jadi sama cepatnya dengan Reply.
 
 Jadi Reply melihat seluruh meeting, bukan cuma beberapa kalimat terakhir. Script menjawab hal terakhir yang mereka katakan dulu, lalu menanggapi pertanyaan atau poin sebelumnya yang belum terjawab. Potongan transkrip yang sudah selesai tidak pernah berubah, jadi Reply berikutnya membaca cache dari Reply sebelumnya dan hanya menulis potongan baru. Meeting yang sangat panjang (lebih dari ±60.000 karakter transkrip lama) membuang potongan paling awal.
 

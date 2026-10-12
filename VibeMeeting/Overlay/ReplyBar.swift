@@ -1,7 +1,7 @@
 import SwiftUI
 import VibeCore
 
-/// Intent chips, the Steer field, and the main Reply button.
+/// Intent chips, Ask questions, the Steer field, and the main Reply button.
 struct ReplyBar: View {
     let controller: OverlayController
     @Environment(MeetingSession.self) private var session
@@ -20,6 +20,16 @@ struct ReplyBar: View {
                     .controlSize(.small)
                 }
                 Spacer(minLength: 0)
+                Button {
+                    session.askQuestions()
+                    controller.releaseFocus()
+                } label: {
+                    Label("Ask questions", systemImage: "questionmark.bubble")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Questions to ask them so the meeting gets clearer, toward your goal (\(Hotkeys.label(.askQuestions))). The steer text focuses them.")
+                .disabled(session.replyState == .drafting)
             }
 
             HStack(spacing: 6) {

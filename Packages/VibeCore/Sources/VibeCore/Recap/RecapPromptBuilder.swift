@@ -39,6 +39,8 @@ public struct RecapPromptBuilder: Sendable {
         var text = ""
         let name = record.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { text += "Meeting name: \(name)\n\n" }
+        let goal = record.goal.trimmingCharacters(in: .whitespacesAndNewlines)
+        text += goal.isEmpty ? "No meeting goal was given.\n\n" : "<meeting_goal>\n\(goal)\n</meeting_goal>\n\n"
         if let partNotes, partNotes.count > 1 {
             let notes = partNotes.enumerated().map { "<part number=\"\($0.offset + 1)\">\n\($0.element)\n</part>" }
             text += "The meeting was long, so it was summarized in parts first.\n<meeting_notes>\n\(notes.joined(separator: "\n"))\n</meeting_notes>"

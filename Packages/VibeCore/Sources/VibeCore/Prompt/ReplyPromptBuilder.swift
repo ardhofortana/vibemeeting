@@ -6,12 +6,31 @@ public struct MeetingPromptContext: Equatable, Sendable {
     public var context: [ContextItem]
     public var preset: StylePreset
     public var meetingInstructions: String
+    /// What the user wants from the meeting (empty when not set).
+    public var goal: String
 
-    public init(aboutMe: String, context: [ContextItem], preset: StylePreset, meetingInstructions: String) {
+    public init(aboutMe: String, context: [ContextItem], preset: StylePreset, meetingInstructions: String, goal: String = "") {
         self.aboutMe = aboutMe
         self.context = context
         self.preset = preset
         self.meetingInstructions = meetingInstructions
+        self.goal = goal
+    }
+}
+
+/// What an Ask questions request needs (the transcript and an optional steer).
+public struct QuestionsAsk: Equatable, Sendable {
+    public var recentTurns: [TranscriptTurn]
+    public var earlierChunks: [[TranscriptTurn]]
+    public var steer: String
+    /// Questions shown before, when asking for different ones.
+    public var previousQuestions: String?
+
+    public init(recentTurns: [TranscriptTurn], earlierChunks: [[TranscriptTurn]] = [], steer: String = "", previousQuestions: String? = nil) {
+        self.recentTurns = recentTurns
+        self.earlierChunks = earlierChunks
+        self.steer = steer
+        self.previousQuestions = previousQuestions
     }
 }
 
@@ -51,7 +70,7 @@ public struct ReplyAsk: Equatable, Sendable {
 ///
 /// Layout:
 /// - system: output rules, About me ← breakpoint (shared by every meeting)
-/// - user: meeting context ← breakpoint, reply style ← breakpoint, the earlier
+/// - user: meeting context ← breakpoint, reply style and goal ← breakpoint, the earlier
 ///   transcript one block per chunk ← breakpoint on the last chunk, then the
 ///   uncached recent transcript and request.
 ///
@@ -70,6 +89,15 @@ public struct ReplyPromptBuilder: Sendable {
         var content = cachedMeetingBlocks(meeting)
         content += Self.earlierTranscriptBlocks(ask.earlierChunks)
         content.append(.text(Self.askText(ask, preset: meeting.preset)))
+        return baseRequest(meeting: meeting, userContent: content, stream: true, maxTokens: maxTokens)
+    }
+
+    /// Questions the user can ask the other side. Same model, settings and cached
+    /// prefix as a reply (a fork of it), so it's as fast; only the tail differs.
+    public func questionsRequest(meeting: MeetingPromptContext, ask: QuestionsAsk) -> MessagesRequest {
+        var content = cachedMeetingBlocks(meeting)
+        content += Self.earlierTranscriptBlocks(ask.earlierChunks)
+        content.append(.text(Self.questionsText(ask)))
         return baseRequest(meeting: meeting, userContent: content, stream: true, maxTokens: maxTokens)
     }
 
@@ -96,7 +124,7 @@ public struct ReplyPromptBuilder: Sendable {
     func cachedMeetingBlocks(_ meeting: MeetingPromptContext) -> [ContentBlock] {
         var blocks = Self.contextBlocks(meeting.context)
         blocks[blocks.count - 1] = blocks[blocks.count - 1].withCache(.ephemeral)
-        blocks.append(.text(Self.styleText(preset: meeting.preset, meetingInstructions: meeting.meetingInstructions), cache: .ephemeral))
+        blocks.append(.text(Self.styleText(preset: meeting.preset, meetingInstructions: meeting.meetingInstructions, goal: meeting.goal), cache: .ephemeral))
         return blocks
     }
 
@@ -138,7 +166,7 @@ public struct ReplyPromptBuilder: Sendable {
         return blocks
     }
 
-    static func styleText(preset: StylePreset, meetingInstructions: String) -> String {
+    static func styleText(preset: StylePreset, meetingInstructions: String, goal: String = "") -> String {
         var text = """
         <reply_style name="\(escapeAttribute(preset.name))">
         \(preset.instructions.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -148,6 +176,10 @@ public struct ReplyPromptBuilder: Sendable {
         let extra = meetingInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
         if !extra.isEmpty {
             text += "\n<meeting_instructions>\n\(extra)\n</meeting_instructions>"
+        }
+        let goal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !goal.isEmpty {
+            text += "\n<meeting_goal>\n\(goal)\n</meeting_goal>"
         }
         return text
     }
@@ -168,13 +200,32 @@ public struct ReplyPromptBuilder: Sendable {
         "\(turn.speaker.label): \(turn.text)\(turn.isLive ? " …" : "")"
     }
 
+    /// The recent turns, closing the earlier transcript when there is one.
+    static func recentTranscriptText(_ turns: [TranscriptTurn], afterEarlier: Bool) -> String {
+        let lines = turns.map(transcriptLine)
+        let closing = afterEarlier ? "</earlier_transcript>\n\n" : ""
+        return closing + "<recent_transcript>\n\(lines.isEmpty ? "(nothing yet)" : lines.joined(separator: "\n"))\n</recent_transcript>"
+    }
+
+    /// The tail of an Ask questions request.
+    static func questionsText(_ ask: QuestionsAsk) -> String {
+        var parts = [recentTranscriptText(ask.recentTurns, afterEarlier: !ask.earlierChunks.isEmpty)]
+        let steer = ask.steer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !steer.isEmpty {
+            parts.append("<steer>\n\(steer)\n</steer>")
+        }
+        if let previous = ask.previousQuestions?.trimmingCharacters(in: .whitespacesAndNewlines), !previous.isEmpty {
+            parts.append("<previous_questions>\n\(previous)\n</previous_questions>\nThe user wants different questions from these.")
+        }
+        parts.append(Prompts.questionsTask)
+        return parts.joined(separator: "\n\n")
+    }
+
     /// Layers 5 and 6: the recent transcript and the request itself.
     static func askText(_ ask: ReplyAsk, preset: StylePreset) -> String {
         var parts: [String] = []
 
-        let lines = ask.recentTurns.map(transcriptLine)
-        let closing = ask.earlierChunks.isEmpty ? "" : "</earlier_transcript>\n\n"
-        parts.append(closing + "<recent_transcript>\n\(lines.isEmpty ? "(nothing yet)" : lines.joined(separator: "\n"))\n</recent_transcript>")
+        parts.append(recentTranscriptText(ask.recentTurns, afterEarlier: !ask.earlierChunks.isEmpty))
 
         var target = "<target speaker=\"\(ask.target.speaker.label)\">\n\(ask.target.text)\n</target>"
         if ask.target.isLive {

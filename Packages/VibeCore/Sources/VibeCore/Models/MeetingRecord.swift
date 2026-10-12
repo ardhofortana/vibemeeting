@@ -9,6 +9,8 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
     public var presetID: String
     public var presetName: String
     public var meetingInstructions: String
+    /// What the user wants from this meeting. Every reply and question steers toward it.
+    public var goal: String
     public var context: [ContextItem]
     public var turns: [TranscriptTurn]
     public var scripts: [ReplyScript]
@@ -26,6 +28,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         presetID: String,
         presetName: String,
         meetingInstructions: String = "",
+        goal: String = "",
         context: [ContextItem] = [],
         turns: [TranscriptTurn] = [],
         scripts: [ReplyScript] = [],
@@ -42,6 +45,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         self.presetID = presetID
         self.presetName = presetName
         self.meetingInstructions = meetingInstructions
+        self.goal = goal
         self.context = context
         self.turns = turns
         self.scripts = scripts
@@ -50,6 +54,27 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         self.replyModel = replyModel
         self.recapModel = recapModel
         self.stats = stats
+    }
+
+    // Meetings saved before a field existed still load.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
+        presetID = try container.decode(String.self, forKey: .presetID)
+        presetName = try container.decode(String.self, forKey: .presetName)
+        meetingInstructions = try container.decodeIfPresent(String.self, forKey: .meetingInstructions) ?? ""
+        goal = try container.decodeIfPresent(String.self, forKey: .goal) ?? ""
+        context = try container.decodeIfPresent([ContextItem].self, forKey: .context) ?? []
+        turns = try container.decodeIfPresent([TranscriptTurn].self, forKey: .turns) ?? []
+        scripts = try container.decodeIfPresent([ReplyScript].self, forKey: .scripts) ?? []
+        recap = try container.decodeIfPresent(Recap.self, forKey: .recap)
+        recapError = try container.decodeIfPresent(String.self, forKey: .recapError)
+        replyModel = try container.decode(String.self, forKey: .replyModel)
+        recapModel = try container.decodeIfPresent(String.self, forKey: .recapModel)
+        stats = try container.decodeIfPresent(SessionStats.self, forKey: .stats) ?? SessionStats()
     }
 
     /// Name shown in lists.
@@ -80,6 +105,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         if displayName.localizedCaseInsensitiveContains(query) { return true }
         if turns.contains(where: { $0.text.localizedCaseInsensitiveContains(query) }) { return true }
         if scripts.contains(where: { $0.text.localizedCaseInsensitiveContains(query) }) { return true }
+        if goal.localizedCaseInsensitiveContains(query) { return true }
         if let recap, recap.markdown(title: "", date: nil, duration: nil).localizedCaseInsensitiveContains(query) { return true }
         return false
     }

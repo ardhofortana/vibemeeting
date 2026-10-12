@@ -106,6 +106,55 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertEqual(Array(warmup.messages[0].content.dropLast()), Array(b.dropLast()))
     }
 
+    func testGoalIsPartOfTheCachedStyleLayer() {
+        var withGoal = meeting
+        withGoal.goal = "Agree on milestone 1 scope and get a go-ahead for the proposal."
+        let content = ReplyPromptBuilder(model: .haiku55).request(meeting: withGoal, ask: ask()).messages[0].content
+        XCTAssertTrue(content[3].text?.contains("<meeting_goal>\nAgree on milestone 1 scope") == true)
+        XCTAssertNotNil(content[3].cacheControl)
+        XCTAssertFalse(content[4].text?.contains("meeting_goal") == true, "the goal is not in the uncached tail")
+
+        let without = ReplyPromptBuilder(model: .haiku55).request(meeting: meeting, ask: ask()).messages[0].content
+        XCTAssertFalse(without[3].text?.contains("meeting_goal") == true)
+        XCTAssertTrue(Prompts.replyRules.contains("<meeting_goal>"))
+        XCTAssertTrue(Prompts.replyRules.contains("wins over the meeting goal"))
+    }
+
+    func testQuestionsShareTheReplyPrefix() {
+        let builder = ReplyPromptBuilder(model: .haiku55)
+        var withGoal = meeting
+        withGoal.goal = "Get budget approval."
+        var replyAsk = ask()
+        replyAsk.earlierChunks = [chunk(0..<3)]
+        let reply = builder.request(meeting: withGoal, ask: replyAsk)
+        let questions = builder.questionsRequest(meeting: withGoal, ask: QuestionsAsk(
+            recentTurns: replyAsk.recentTurns,
+            earlierChunks: replyAsk.earlierChunks,
+            steer: "fokus ke timeline",
+            previousQuestions: "What is your budget?"
+        ))
+        // Same model, settings, system and cached blocks: a cache read, not a write.
+        XCTAssertEqual(questions.model, reply.model)
+        XCTAssertEqual(questions.thinking, reply.thinking)
+        XCTAssertEqual(questions.outputConfig, reply.outputConfig)
+        XCTAssertEqual(questions.system, reply.system)
+        XCTAssertEqual(Array(questions.messages[0].content.dropLast()), Array(reply.messages[0].content.dropLast()))
+        XCTAssertEqual(questions.cacheBreakpointCount, 4)
+
+        let tail = questions.messages[0].content.last?.text ?? ""
+        XCTAssertTrue(tail.hasPrefix("</earlier_transcript>\n\n<recent_transcript>"))
+        XCTAssertTrue(tail.contains("<steer>\nfokus ke timeline\n</steer>"))
+        XCTAssertTrue(tail.contains("<previous_questions>\nWhat is your budget?\n</previous_questions>"))
+        XCTAssertTrue(tail.hasSuffix(Prompts.questionsTask))
+    }
+
+    func testQuestionsWorkBeforeAnyoneSpoke() {
+        let text = ReplyPromptBuilder.questionsText(QuestionsAsk(recentTurns: []))
+        XCTAssertTrue(text.contains("<recent_transcript>\n(nothing yet)\n</recent_transcript>"))
+        XCTAssertFalse(text.contains("<steer>"))
+        XCTAssertFalse(text.contains("earlier_transcript"))
+    }
+
     func testRulesAskToAnswerTheLatestAndOpenEarlierPoints() {
         XCTAssertTrue(Prompts.replyRules.contains("Answer it first"))
         XCTAssertTrue(Prompts.replyRules.contains("still needs a reply"))

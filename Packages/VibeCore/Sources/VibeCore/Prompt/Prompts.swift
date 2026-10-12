@@ -30,11 +30,28 @@ public enum Prompts {
     - The transcript holds the whole conversation so far: <earlier_transcript> when present, then <recent_transcript>. Use it to understand what "that", "the second option" or "like you said" refer to.
     - Stay consistent with what the user ("You") already said in this call, and don't repeat it.
 
+    The meeting goal
+    - <meeting_goal>, when given, is what the user wants to get out of this meeting. Every reply should move the conversation toward it: answer what they said, then, where it fits naturally, take one step toward the goal, such as a proposal, a next step, or a question that gets a missing piece.
+    - Answering them always comes first. Don't force the goal into every sentence or repeat the same push in every reply.
+
     Priorities
-    - When a steer is given, it wins over the reply style if the two conflict. The steer may be written in Indonesian or as keywords: follow its meaning, but always write the script in English.
+    - When a steer is given, it wins over the meeting goal and the reply style if they conflict. The steer may be written in Indonesian or as keywords: follow its meaning, but always write the script in English.
+    - When the request at the end asks for questions instead of a reply script, follow its format.
     - The transcript comes from live speech recognition and can contain misheard words. If a word looks wrong, go with the most likely meaning.
 
     Output only the words to say, with nothing before or after them.
+    """
+
+    /// The request at the end of an Ask questions call.
+    public static let questionsTask = """
+    <task>
+    Instead of a reply script, write 3 to 5 questions the user can ask them right now to make this meeting clearer and move it toward the meeting goal (without a goal, toward a clear outcome and next step).
+    - Go for what is still unclear or missing to reach the goal, for example scope, priorities, constraints, who decides, timeline, budget, or how they will judge success. Pick what matters for this meeting.
+    - Skip anything they already answered in the transcript or that the meeting context already says.
+    - Each question is one short spoken sentence in simple, polite English, ready to read out loud. Use their words for things where you can.
+    - Put the most useful question first.
+    - One question per line and nothing else: no numbering, no bullets, no intro. The reply style's length doesn't apply here.
+    </task>
     """
 
     /// System prompt for the post-meeting recap.
@@ -46,6 +63,7 @@ public enum Prompts {
     - Be concrete. Keep names, numbers, dates and scope details exactly as stated, and never invent them.
     - Decisions are only things both sides actually agreed on.
     - Each action item is one concrete next step with its owner (You or Them). Fill in the deadline only if one was mentioned.
+    - When a meeting goal is given, say plainly how far the meeting got toward it and what is still missing.
     - Write in plain English sentences without markdown.
     """
 

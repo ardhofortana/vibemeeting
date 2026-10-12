@@ -34,6 +34,30 @@ public enum ScriptText {
         return result
     }
 
+    /// The questions of an Ask questions result, one per line, cleaned up. Drops
+    /// numbering, bullets and any intro line that isn't a question; while the
+    /// last line is still streaming it's kept as it is.
+    public static func questions(from text: String) -> [String] {
+        let lines = text.components(separatedBy: .newlines)
+        var questions: [String] = []
+        for (index, raw) in lines.enumerated() {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            // "1. ", "2) ", "- ", "• "
+            if let match = line.range(of: #"^(\d{1,2}[.)]|[-•*])\s+"#, options: .regularExpression) {
+                line.removeSubrange(match)
+            }
+            line = sanitize(line)
+            guard !line.isEmpty else { continue }
+            let isLast = index == lines.count - 1
+            // An intro like "Here are some questions:" is dropped; so is any finished
+            // line that isn't a question. The line being written stays.
+            if line.hasSuffix(":") { continue }
+            if !isLast, !line.contains("?") { continue }
+            questions.append(line)
+        }
+        return questions
+    }
+
     /// Splits off the first sentence so it can be shown in bold. While a
     /// script is still streaming and has no sentence end yet, everything is "first".
     public static func splitFirstSentence(_ text: String) -> (first: String, rest: String) {

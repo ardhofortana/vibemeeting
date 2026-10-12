@@ -38,13 +38,16 @@ public struct Recap: Codable, Equatable, Sendable {
     public var decisions: [String]
     public var actionItems: [ActionItem]
     public var openQuestions: [String]
+    /// How far the meeting got toward its goal and what is missing (empty without a goal).
+    public var goalProgress: String
 
-    public init(summary: String, keyPoints: [String] = [], decisions: [String] = [], actionItems: [ActionItem] = [], openQuestions: [String] = []) {
+    public init(summary: String, keyPoints: [String] = [], decisions: [String] = [], actionItems: [ActionItem] = [], openQuestions: [String] = [], goalProgress: String = "") {
         self.summary = summary
         self.keyPoints = keyPoints
         self.decisions = decisions
         self.actionItems = actionItems
         self.openQuestions = openQuestions
+        self.goalProgress = goalProgress
     }
 
     enum CodingKeys: String, CodingKey {
@@ -53,13 +56,25 @@ public struct Recap: Codable, Equatable, Sendable {
         case decisions
         case actionItems = "action_items"
         case openQuestions = "open_questions"
+        case goalProgress = "goal_progress"
+    }
+
+    // Recaps saved before goal progress existed still load.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        summary = try container.decode(String.self, forKey: .summary)
+        keyPoints = try container.decodeIfPresent([String].self, forKey: .keyPoints) ?? []
+        decisions = try container.decodeIfPresent([String].self, forKey: .decisions) ?? []
+        actionItems = try container.decodeIfPresent([ActionItem].self, forKey: .actionItems) ?? []
+        openQuestions = try container.decodeIfPresent([String].self, forKey: .openQuestions) ?? []
+        goalProgress = try container.decodeIfPresent(String.self, forKey: .goalProgress) ?? ""
     }
 
     /// JSON schema for `output_config.format`, matching `CodingKeys`.
     public static let jsonSchema: JSONValue = .object([
         "type": "object",
         "additionalProperties": false,
-        "required": ["summary", "key_points", "decisions", "action_items", "open_questions"],
+        "required": ["summary", "key_points", "decisions", "action_items", "open_questions", "goal_progress"],
         "properties": .object([
             "summary": .object([
                 "type": "string",
@@ -81,6 +96,10 @@ public struct Recap: Codable, Equatable, Sendable {
                 ]),
             ]),
             "open_questions": stringArray("Questions that were raised but not answered."),
+            "goal_progress": .object([
+                "type": "string",
+                "description": "One to three sentences on how far the meeting got toward the meeting goal and what is still missing. An empty string when no goal was given.",
+            ]),
         ]),
     ])
 
@@ -91,7 +110,7 @@ public struct Recap: Codable, Equatable, Sendable {
 
 extension Recap {
     /// Markdown for "Copy as Markdown" and .md export.
-    public func markdown(title: String, date: Date?, duration: TimeInterval?, timeZone: TimeZone = .current) -> String {
+    public func markdown(title: String, date: Date?, duration: TimeInterval?, goal: String = "", timeZone: TimeZone = .current) -> String {
         var lines: [String] = ["# \(title.isEmpty ? "Meeting recap" : title)"]
 
         var meta: [String] = []
@@ -106,6 +125,17 @@ extension Recap {
             meta.append(Self.formatDuration(duration))
         }
         if !meta.isEmpty { lines.append("_\(meta.joined(separator: " · "))_") }
+
+        let goal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !goal.isEmpty {
+            lines.append("")
+            lines.append("## Goal")
+            lines.append(goal)
+            if !goalProgress.isEmpty {
+                lines.append("")
+                lines.append(goalProgress)
+            }
+        }
 
         lines.append("")
         lines.append("## Summary")

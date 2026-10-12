@@ -11,6 +11,7 @@ extension KeyboardShortcuts.Name {
     static let steer = Self("steer", default: .init(.space, modifiers: [.option, .shift]))
     static let regenerate = Self("regenerate", default: .init(.r, modifiers: [.option]))
     static let shorter = Self("shorter", default: .init(.s, modifiers: [.option]))
+    static let askQuestions = Self("askQuestions", default: .init(.q, modifiers: [.option]))
     static let toggleOverlay = Self("toggleOverlay", default: .init(.h, modifiers: [.option]))
 }
 
@@ -34,6 +35,7 @@ enum Hotkeys {
         Entry(name: .steer, title: "Steer", note: "Focus the steer field; Enter to generate"),
         Entry(name: .regenerate, title: "Regenerate", note: "New script for the same target"),
         Entry(name: .shorter, title: "Shorter", note: "Shorten the last script"),
+        Entry(name: .askQuestions, title: "Ask questions", note: "Questions to ask them, toward the meeting goal"),
         Entry(name: .toggleOverlay, title: "Show/hide overlay", note: "Hide without stopping the meeting"),
     ]
 
@@ -47,6 +49,7 @@ enum Hotkeys {
         KeyboardShortcuts.onKeyDown(for: .pushBack) { [weak app] in app?.activeSession?.reply(intent: .pushBack) }
         KeyboardShortcuts.onKeyDown(for: .regenerate) { [weak app] in app?.activeSession?.regenerate() }
         KeyboardShortcuts.onKeyDown(for: .shorter) { [weak app] in app?.activeSession?.shorter() }
+        KeyboardShortcuts.onKeyDown(for: .askQuestions) { [weak app] in app?.activeSession?.askQuestions() }
         KeyboardShortcuts.onKeyDown(for: .toggleOverlay) { [weak app] in app?.toggleOverlay() }
         KeyboardShortcuts.onKeyDown(for: .steer) { [weak app] in
             guard let app, let session = app.activeSession else { return }

@@ -99,7 +99,13 @@ final class MeetingSession: Identifiable {
 
     @ObservationIgnored private var tickTask: Task<Void, Never>?
     @ObservationIgnored private var replyTask: Task<Void, Never>?
-    @ObservationIgnored private var lastAsk: ReplyAsk?
+    /// What a Reply or Ask questions asked for, for Try again.
+    private enum Request {
+        case reply(ReplyAsk)
+        case questions(QuestionsAsk)
+    }
+
+    @ObservationIgnored private var lastAsk: Request?
     @ObservationIgnored private var lastCacheTouch: Date?
     @ObservationIgnored private var isDirty = false
     @ObservationIgnored private var lastSave = Date()
@@ -313,7 +319,8 @@ final class MeetingSession: Identifiable {
             aboutMe: settings.aboutMe,
             context: record.context,
             preset: preset,
-            meetingInstructions: record.meetingInstructions
+            meetingInstructions: record.meetingInstructions,
+            goal: record.goal
         )
     }
 
@@ -340,7 +347,7 @@ final class MeetingSession: Identifiable {
         )
         steerText = ""
         selectedTurnID = nil
-        run(ask)
+        run(.reply(ask))
     }
 
     /// ⌥R: a new script for the same target.
@@ -349,18 +356,50 @@ final class MeetingSession: Identifiable {
             reply()
             return
         }
-        run(followUp(to: previous, variant: .regenerate))
+        if previous.intent == .questions {
+            run(.questions(questionsAsk(steer: previous.steer, previousQuestions: previous.text)))
+        } else {
+            run(.reply(followUp(to: previous, variant: .regenerate)))
+        }
     }
 
     /// ⌥S: a shorter version of the last script.
     func shorter() {
-        guard let previous = currentScript ?? record.scripts.last, !previous.text.isEmpty else { return }
-        run(followUp(to: previous, variant: .shorter))
+        guard let previous = currentScript ?? record.scripts.last, !previous.text.isEmpty,
+              previous.intent != .questions else { return }
+        run(.reply(followUp(to: previous, variant: .shorter)))
+    }
+
+    /// ⌥Q: questions the user can ask the other side to make the meeting clearer
+    /// and move it toward the goal. Works before anyone has spoken.
+    func askQuestions() {
+        let steer = steerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        steerText = ""
+        run(.questions(questionsAsk(steer: steer, previousQuestions: nil)))
     }
 
     func retry() {
         guard let lastAsk else { return }
         run(lastAsk)
+    }
+
+    /// Sets or changes the meeting goal; used from the next reply on.
+    func setGoal(_ goal: String) {
+        let goal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard goal != record.goal else { return }
+        record.goal = goal
+        save()
+        warmCache()
+    }
+
+    private func questionsAsk(steer: String, previousQuestions: String?) -> QuestionsAsk {
+        let window = transcript.replyTranscript()
+        return QuestionsAsk(
+            recentTurns: window.recentTurns,
+            earlierChunks: window.earlierChunks,
+            steer: steer,
+            previousQuestions: previousQuestions
+        )
     }
 
     /// Shows an earlier script from this meeting again.
@@ -392,7 +431,7 @@ final class MeetingSession: Identifiable {
         )
     }
 
-    private func run(_ ask: ReplyAsk) {
+    private func run(_ ask: Request) {
         replyTask?.cancel()
         if let currentScript, replyState == .streaming {
             // Keep the interrupted draft in the history.
@@ -401,19 +440,38 @@ final class MeetingSession: Identifiable {
         lastAsk = ask
 
         let model = settings.replyModel
-        let request = ReplyPromptBuilder(model: model).request(meeting: promptContext, ask: ask)
-        let initialScript = ReplyScript(
-            targetTurnIDs: ask.target.turnIDs,
-            targetText: ask.target.text,
-            intent: ask.intent,
-            steer: ask.steer,
-            variant: ask.variant,
-            presetName: preset.name,
-            model: model.id
-        )
+        let builder = ReplyPromptBuilder(model: model)
+        let request: MessagesRequest
+        let initialScript: ReplyScript
+        switch ask {
+        case .reply(let ask):
+            request = builder.request(meeting: promptContext, ask: ask)
+            initialScript = ReplyScript(
+                targetTurnIDs: ask.target.turnIDs,
+                targetText: ask.target.text,
+                intent: ask.intent,
+                steer: ask.steer,
+                variant: ask.variant,
+                presetName: preset.name,
+                model: model.id
+            )
+        case .questions(let ask):
+            // Same cached prefix as a reply, so it's as fast.
+            request = builder.questionsRequest(meeting: promptContext, ask: ask)
+            initialScript = ReplyScript(
+                targetTurnIDs: [],
+                targetText: record.goal,
+                intent: .questions,
+                steer: ask.steer,
+                variant: ask.previousQuestions == nil ? .fresh : .regenerate,
+                presetName: preset.name,
+                model: model.id
+            )
+        }
+        let isQuestions = initialScript.intent == .questions
         currentScript = initialScript
         replyState = .drafting
-        switch ask.variant {
+        switch initialScript.variant {
         case .fresh: record.stats.replyCount += 1
         case .regenerate: record.stats.regenerateCount += 1
         case .shorter: record.stats.shorterCount += 1
@@ -453,7 +511,10 @@ final class MeetingSession: Identifiable {
                         throw ClaudeError.refusal(category: nil)
                     }
                     script.totalLatency = Self.seconds(start.duration(to: clock.now))
-                    script.text = ScriptText.sanitize(script.text)
+                    // Questions keep one per line; a script is one spoken paragraph.
+                    script.text = isQuestions
+                        ? ScriptText.questions(from: script.text).joined(separator: "\n")
+                        : ScriptText.sanitize(script.text)
                     self.finish(script, model: model)
                     return
                 } catch is CancellationError {
