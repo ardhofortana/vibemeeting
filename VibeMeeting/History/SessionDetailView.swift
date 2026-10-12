@@ -57,8 +57,9 @@ struct SessionDetailView: View {
         }
     }
 
+    /// In progress or still saving: the stored record isn't final yet.
     private var isLive: Bool {
-        app.activeSession?.id == recordID && app.activeSession?.isActive == true
+        app.activeSession?.id == recordID
     }
 
     // MARK: - Header
@@ -97,7 +98,7 @@ struct SessionDetailView: View {
         var parts = [record.startedAt.formatted(date: .complete, time: .shortened)]
         if let duration = record.duration { parts.append(Recap.formatDuration(duration)) }
         parts.append(record.presetName)
-        if isLive { parts.append("In progress") }
+        if isLive { parts.append(app.activeSession?.isActive == true ? "In progress" : "Saving…") }
         return parts.joined(separator: " · ")
     }
 

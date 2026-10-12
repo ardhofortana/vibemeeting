@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        app.isTerminating = true
         // Still set while a meeting is ending, so Quit waits for its save too.
         guard app.activeSession != nil else { return .terminateNow }
         // Save the transcript before quitting mid-meeting.

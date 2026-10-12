@@ -42,8 +42,12 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var wantsVoiceProcessing = false
     private var configurationObserver: NSObjectProtocol?
     private var defaultInputListener: AudioObjectPropertyListenerBlock?
-    /// The skip reason last announced, so a restart on the same route stays quiet.
+    /// Why echo cancellation is off as last announced (nil: nothing announced, or
+    /// it runs), so a restart on the same route stays quiet and a recovery clears it.
     private var announcedSkip: String?
+    /// The restart cap tripped; further device changes aren't counted or reported
+    /// until one of them starts the mic again.
+    private var stoppedForRestarts = false
     private var pendingRestart: DispatchWorkItem?
     private var restartTimes: [Date] = []
     /// Bumped on every engine start, so stale health checks do nothing.
@@ -66,8 +70,9 @@ final class MicrophoneCapture: @unchecked Sendable {
     var onReconnect: ((Result<Void, Error>) -> Void)?
     /// Main queue. Echo cancellation was asked for but had to be turned off.
     var onVoiceProcessingFallback: ((String) -> Void)?
-    /// Main queue. Echo cancellation was asked for but isn't used on this route.
-    var onVoiceProcessingSkipped: ((String) -> Void)?
+    /// Main queue. Echo cancellation was asked for but isn't used on this route
+    /// (the reason), or runs again after it was off (nil).
+    var onVoiceProcessingSkipped: ((String?) -> Void)?
 
     init(diagnostics: StreamDiagnostics? = nil) {
         self.diagnostics = diagnostics
@@ -88,6 +93,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         brokenRoutes = []
         restartTimes = []
         announcedSkip = nil
+        stoppedForRestarts = false
         // Watch before the first attempt: if it fails (no mic yet, device busy), a
         // mic appearing later still starts capture.
         observeConfigurationChanges()
@@ -123,15 +129,14 @@ final class MicrophoneCapture: @unchecked Sendable {
         var tryVoiceProcessing = false
         if wantsVoiceProcessing {
             if let reason = AudioRoute.reasonToSkipVoiceProcessing(route) {
-                // Not a failure, but the user turned it on, so say why it's off.
+                // Not a failure, but the user turned it on, so say why it's off. With
+                // no route there's no mic at all, which the mic notice already says.
                 voiceProcessingOffReason = reason
-                if announcedSkip != reason {
-                    announcedSkip = reason
-                    let callback = onVoiceProcessingSkipped
-                    DispatchQueue.main.async { callback?(reason) }
-                }
+                if route != nil { announceOff(reason) }
             } else if let key = route?.key, brokenRoutes.contains(key) {
-                voiceProcessingOffReason = "Echo cancellation failed earlier on these devices"
+                let reason = "Echo cancellation failed earlier on these devices"
+                voiceProcessingOffReason = reason
+                announceOff(reason)
             } else {
                 tryVoiceProcessing = true
             }
@@ -140,6 +145,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         if tryVoiceProcessing {
             do {
                 try startEngine(voiceProcessing: true)
+                announceOff(nil)
                 return
             } catch {
                 Log.audio.error("Mic with voice processing failed: \(String(describing: error), privacy: .public)")
@@ -245,8 +251,18 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     private func announceFallback(_ reason: String) {
         voiceProcessingOffReason = reason
+        // Shares the notice with skips: a later successful start clears it.
+        announcedSkip = reason
         Log.audio.notice("Echo cancellation off: \(reason, privacy: .public)")
         let callback = onVoiceProcessingFallback
+        DispatchQueue.main.async { callback?(reason) }
+    }
+
+    /// Says why echo cancellation is off (or nil: it runs again), once per change.
+    private func announceOff(_ reason: String?) {
+        guard announcedSkip != reason else { return }
+        announcedSkip = reason
+        let callback = onVoiceProcessingSkipped
         DispatchQueue.main.async { callback?(reason) }
     }
 
@@ -348,7 +364,11 @@ final class MicrophoneCapture: @unchecked Sendable {
     private func restartAfterConfigurationChange() {
         guard handler != nil else { return }
         let now = Date()
-        restartTimes = restartTimes.filter { now.timeIntervalSince($0) < 30 } + [now]
+        let recent = restartTimes.filter { now.timeIntervalSince($0) < 30 }
+        // Stopped by the cap: don't count further changes, so the window can empty,
+        // and stay quiet while the device is still flapping.
+        restartTimes = stoppedForRestarts ? recent : recent + [now]
+        if stoppedForRestarts && restartTimes.count > 5 { return }
         let wasProcessing = voiceProcessingActive
         Log.audio.info("Audio configuration changed; restarting mic")
         teardown()
@@ -365,6 +385,7 @@ final class MicrophoneCapture: @unchecked Sendable {
                 restartTimes = [now]
             } else {
                 diagnostics?.update { $0.captureState = "Stopped: device keeps changing" }
+                stoppedForRestarts = true
                 onReconnect?(.failure(Failure.tooManyRestarts))
                 return
             }
@@ -372,6 +393,7 @@ final class MicrophoneCapture: @unchecked Sendable {
 
         do {
             try startChoosingMode()
+            stoppedForRestarts = false
             onReconnect?(.success(()))
         } catch {
             diagnostics?.update {

@@ -25,6 +25,8 @@ final class CapturePipeline {
         case voiceProcessingUnavailable(String)
         /// Echo cancellation was asked for but isn't used on this route (the reason says why).
         case voiceProcessingSkipped(String)
+        /// Echo cancellation runs again after it was off.
+        case voiceProcessingResumed
     }
 
     struct Configuration {
@@ -200,7 +202,7 @@ final class CapturePipeline {
         }
         // The user turned echo cancellation on, so a skip is reported too.
         mic.onVoiceProcessingSkipped = { [weak self] reason in
-            self?.onEvent?(.voiceProcessingSkipped(reason))
+            self?.onEvent?(reason.map { .voiceProcessingSkipped($0) } ?? .voiceProcessingResumed)
         }
         do {
             diagnostics.update { $0.captureState = "Starting" }

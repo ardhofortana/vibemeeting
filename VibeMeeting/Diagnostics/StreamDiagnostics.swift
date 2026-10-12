@@ -132,10 +132,12 @@ extension StreamDiagnostics.Snapshot {
             return captureState.hasPrefix("Failed") ? "Capture failed to start" : "Capture: no buffers yet"
         }
         if peakRMS <= AudioLevelMeter.silenceRMS {
-            if tracksNonZero && secondsSinceNonZero == nil {
-                return "Capture: only exact zeros so far (nothing playing yet, or no permission)"
+            if tracksNonZero {
+                return secondsSinceNonZero == nil
+                    ? "Capture: only exact zeros so far (nothing playing yet, or no permission)"
+                    : "Capture: only silence so far (nothing playing)"
             }
-            return "Capture: only silence so far (nothing playing, or wrong mic channel)"
+            return "Capture: only digital silence (microphone permission, muted input, or wrong mic channel)"
         }
         if transcriberState == "Stopped with an error" || transcriberState == "Ended unexpectedly" {
             return "Speech stopped (\(transcriberState.lowercased())); see the error below"

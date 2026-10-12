@@ -418,6 +418,13 @@ final class SystemAudioTap: @unchecked Sendable {
             // Something keeps changing (a flapping device or format). Stop rebuilding
             // and say so rather than tearing down the tap forever.
             Log.audio.error("Too many tap rebuilds; pausing: \(reason, privacy: .public)")
+            if stream == nil {
+                // A retry chain was running and nothing will rebuild the tap now: end
+                // the Reconnecting state, and let the notice say why (again).
+                let error = CoreAudioError(status: OSStatus(kAudioHardwareUnspecifiedError), operation: "Rebuilding the system audio tap")
+                DispatchQueue.main.async { [weak self] in self?.onReconnect?(.failure(error), false) }
+                reportedProblem = nil
+            }
             report(.deviceKeepsChanging)
             return
         }

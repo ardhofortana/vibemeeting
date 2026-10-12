@@ -24,6 +24,8 @@ final class AppModel {
     var selectedRecordID: UUID?
     /// Stopping and saving the meeting being ended. Quit and New meeting wait for it.
     @ObservationIgnored private var teardown: Task<Void, Never>?
+    /// Set once Quit is accepted; no meeting starts after that.
+    @ObservationIgnored var isTerminating = false
 
     init() {
         if let store = try? SessionStore(directory: SessionStore.defaultDirectory()) {
@@ -67,6 +69,8 @@ final class AppModel {
         // Only one capture pipeline at a time. After the permission prompt, so an
         // Audio check can't start while it's up.
         await audioCheck.stop()
+        // Quit was chosen while this waited: don't start a meeting nobody ends.
+        guard !isTerminating else { return }
 
         let record = MeetingRecord(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -139,7 +143,9 @@ final class AppModel {
     // MARK: - Recap
 
     func generateRecap(for id: UUID) async {
-        guard var record = record(id: id), !recapsInProgress.contains(id) else { return }
+        // Never from the live copy: while a meeting is still saving, the final
+        // record would be overwritten with an older one when the recap returns.
+        guard activeSession?.id != id, var record = record(id: id), !recapsInProgress.contains(id) else { return }
         guard settings.hasAPIKey else {
             record.recapError = "Add your Claude API key in Settings to create a recap."
             save(record)

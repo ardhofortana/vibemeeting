@@ -75,6 +75,7 @@ final class AudioCheckModel {
         case .micReconnected: return "Microphone reconnected"
         case .voiceProcessingUnavailable(let reason): return "Echo cancellation off: \(reason)"
         case .voiceProcessingSkipped(let reason): return "Echo cancellation not used: \(reason)"
+        case .voiceProcessingResumed: return "Echo cancellation on"
         }
     }
 }

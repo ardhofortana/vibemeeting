@@ -38,8 +38,10 @@ final class MeetingSession: Identifiable {
 
     struct Notice: Identifiable, Equatable {
         enum Kind: Hashable {
-            /// Nothing heard from the call: permission, or the wrong source.
+            /// Nothing heard from the call: permission.
             case cantHearCall
+            /// The one app chosen as the source is silent while another app plays.
+            case chosenAppIdle
             /// The system audio device fails (start, rebuild, IO).
             case systemAudioError
             case micSilent
@@ -111,6 +113,9 @@ final class MeetingSession: Identifiable {
     @ObservationIgnored private var themFailedAt: Date?
     @ObservationIgnored private var youFailedAt: Date?
     @ObservationIgnored private var othersPlaying: (at: Date, value: Bool)?
+    /// The app the tap listens to for this meeting (nil: all system audio). Read
+    /// once at start; changing the setting applies to the next meeting.
+    @ObservationIgnored private var tappedBundleID: String?
     /// The diagnostics report taken just before capture stopped (no transcript text).
     @ObservationIgnored private(set) var diagnosticsReport: String?
 
@@ -142,7 +147,8 @@ final class MeetingSession: Identifiable {
 
         pipeline.onUpdate = { [weak self] update in self?.apply(update) }
         pipeline.onEvent = { [weak self] event in self?.handle(event) }
-        let source: SystemAudioTap.Source = settings.audioSourceBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
+        tappedBundleID = settings.audioSourceBundleID
+        let source: SystemAudioTap.Source = tappedBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
         await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing))
         guard status == .starting else { return }
 
@@ -239,6 +245,8 @@ final class MeetingSession: Identifiable {
             setNotice(.echoCancellationOff, "\(reason). Echo cancellation is off; a headset keeps Them and You apart.")
         case .voiceProcessingSkipped(let reason):
             setNotice(.echoCancellationOff, "Echo cancellation not used: \(reason).")
+        case .voiceProcessingResumed:
+            removeNotice(.echoCancellationOff)
         }
     }
 
@@ -551,11 +559,19 @@ final class MeetingSession: Identifiable {
                 removeNotice(.micUnavailable)
             }
             // Nothing heard in this meeting at all, while another app plays. (Quiet
-            // stretches after the call was heard are normal: muted, presenting.)
-            if listenedFor > 60, them.lastSoundAt == nil, isOtherAudioPlaying(now) {
-                addNotice(.cantHearCall, cantHearNoticeText())
+            // stretches after the call was heard are normal: muted, presenting.) With
+            // one app chosen, a long silence of that app while another plays counts
+            // too: a ping from the chosen app doesn't mean the call is in it.
+            let chosenAppIdle = tappedBundleID != nil && pipeline.themDiagnostics.read().chosenAppIdle
+            if listenedFor > 60, them.lastSoundAt == nil || (themQuiet > 60 && chosenAppIdle), isOtherAudioPlaying(now) {
+                if let bundleID = tappedBundleID, chosenAppIdle {
+                    addNotice(.chosenAppIdle, Self.chosenAppIdleMessage(bundleID: bundleID))
+                } else {
+                    addNotice(.cantHearCall, Self.genericCantHearMessage)
+                }
             } else if themQuiet < 1 {
                 removeNotice(.cantHearCall)
+                removeNotice(.chosenAppIdle)
             }
             if listenedFor > 30, youQuiet > 30 {
                 addNotice(.micSilent, "Your mic seems silent.")
@@ -577,13 +593,9 @@ final class MeetingSession: Identifiable {
         }
     }
 
-    /// The generic "can't hear" text, or a hint about the chosen source app.
-    private func cantHearNoticeText() -> String {
-        guard let bundleID = settings.audioSourceBundleID, pipeline.themDiagnostics.read().chosenAppIdle else {
-            return Self.genericCantHearMessage
-        }
+    private static func chosenAppIdleMessage(bundleID: String) -> String {
         let name = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == bundleID }?.localizedName ?? bundleID
-        return "Listening only to \(name), which isn't playing while another app is. If your call is in another app, set Settings → Audio → Listen to → All system audio."
+        return "Listening only to \(name), which isn't playing while another app is. If your call is in another app, set Settings → Audio → Listen to → All system audio, then end and start a new meeting."
     }
 
     /// Whether any other app is sending audio to an output (read at most once a second).

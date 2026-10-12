@@ -11,7 +11,7 @@ struct MainWindowView: View {
         NavigationSplitView {
             List(selection: $app.selectedRecordID) {
                 ForEach(filteredRecords) { record in
-                    RecordRow(record: record, isLive: app.activeSession?.id == record.id && app.activeSession?.isActive == true)
+                    RecordRow(record: record, isLive: app.activeSession?.id == record.id)
                         .tag(record.id)
                 }
             }
