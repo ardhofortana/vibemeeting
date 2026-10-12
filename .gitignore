@@ -15,3 +15,6 @@ Package.resolved
 
 # Local secrets
 *.env
+
+# Personal signing Team (see Configs/Signing.xcconfig)
+Configs/Local.xcconfig

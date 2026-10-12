@@ -10,6 +10,7 @@ final class CapturePipeline {
     enum Event {
         case transcriberFailed(Speaker, Error)
         case systemAudioFailed(Error)
+        case systemAudioProblem(SystemAudioTap.Problem)
         case systemAudioReconnected
         case appAudioNotFound
         case micFailed(Error)
@@ -55,7 +56,8 @@ final class CapturePipeline {
         await startTranscriber(youTranscriber)
         guard isRunning else { return }
 
-        startSystemAudio(configuration.source)
+        await startSystemAudio(configuration.source)
+        guard isRunning else { return }
         startMicrophone(voiceProcessing: configuration.voiceProcessing)
     }
 
@@ -91,8 +93,7 @@ final class CapturePipeline {
                     self?.onUpdate?(update)
                 },
                 onError: { [weak self] error in
-                    Log.speech.error("Transcriber error: \(String(describing: error), privacy: .public)")
-                    Task { @MainActor in self?.onEvent?(.transcriberFailed(speaker, error)) }
+                    self?.onEvent?(.transcriberFailed(speaker, error))
                 }
             )
             return true
@@ -103,26 +104,39 @@ final class CapturePipeline {
         }
     }
 
-    private func startSystemAudio(_ source: SystemAudioTap.Source) {
+    private func startSystemAudio(_ source: SystemAudioTap.Source) async {
         let meter = themMeter
         let diagnostics = themDiagnostics
         let transcriber = themTranscriber
-        systemTap.onReconnect = { [weak self] result in
+        let tap = systemTap
+        tap.onReconnect = { [weak self] result in
             switch result {
             case .success: self?.onEvent?(.systemAudioReconnected)
             case .failure(let error): self?.onEvent?(.systemAudioFailed(error))
             }
         }
+        tap.onProblem = { [weak self] problem in
+            self?.onEvent?(.systemAudioProblem(problem))
+        }
+        let handler: SystemAudioTap.BufferHandler = { buffer in
+            diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
+            transcriber.append(buffer)
+        }
         do {
-            try systemTap.start(source: source) { buffer in
-                diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
-                transcriber.append(buffer)
-            }
-            if systemTap.fellBackToAllAudio {
+            // Off the main actor: while the System Audio Recording prompt is
+            // unanswered, creating the aggregate device blocks.
+            try await Task.detached(priority: .userInitiated) {
+                try tap.start(source: source, handler: handler)
+            }.value
+            if tap.fellBackToAllAudio {
                 onEvent?(.appAudioNotFound)
             }
         } catch {
             Log.audio.error("System audio failed: \(String(describing: error), privacy: .public)")
+            diagnostics.update {
+                $0.captureState = "Failed to start"
+                $0.lastError = String(describing: error)
+            }
             onEvent?(.systemAudioFailed(error))
         }
     }
@@ -138,15 +152,21 @@ final class CapturePipeline {
             }
         }
         do {
+            diagnostics.update { $0.captureState = "Starting" }
             try mic.start(voiceProcessing: voiceProcessing) { buffer in
                 diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
                 transcriber.append(buffer)
             }
+            diagnostics.update { $0.captureState = self.mic.voiceProcessingActive ? "Running (voice processing)" : "Running" }
             if voiceProcessing && !mic.voiceProcessingActive {
                 onEvent?(.voiceProcessingUnavailable)
             }
         } catch {
             Log.audio.error("Mic failed: \(String(describing: error), privacy: .public)")
+            diagnostics.update {
+                $0.captureState = "Failed to start"
+                $0.lastError = String(describing: error)
+            }
             onEvent?(.micFailed(error))
         }
     }

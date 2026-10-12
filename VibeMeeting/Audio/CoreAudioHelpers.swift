@@ -56,6 +56,18 @@ extension AudioObjectID {
         return list
     }
 
+    /// Like readObjectList, but for any scope (e.g. a device's input streams).
+    func readObjects(_ selector: AudioObjectPropertySelector, scope: AudioObjectPropertyScope) throws -> [AudioObjectID] {
+        var address = address(selector, scope: scope)
+        var size: UInt32 = 0
+        try check(AudioObjectGetPropertyDataSize(self, &address, 0, nil, &size), "Sizing list \(selector)")
+        let count = Int(size) / MemoryLayout<AudioObjectID>.size
+        guard count > 0 else { return [] }
+        var list = [AudioObjectID](repeating: .unknown, count: count)
+        try check(AudioObjectGetPropertyData(self, &address, 0, nil, &size, &list), "Reading list \(selector)")
+        return Array(list.prefix(Int(size) / MemoryLayout<AudioObjectID>.size))
+    }
+
     /// The Core Audio process object for a PID, if that process has one.
     static func process(for pid: pid_t) -> AudioObjectID? {
         var address = AudioObjectPropertyAddress(

@@ -19,6 +19,11 @@ final class StreamDiagnostics: @unchecked Sendable {
         var analyzerFormat = "–"
         var buffersToAnalyzer = 0
         var framesToAnalyzer = 0
+        /// Loudest RMS actually sent to speech recognition. Zero while the capture
+        /// peak isn't means audio was lost in conversion.
+        var analyzerPeakRMS: Float = 0
+        var lastAudibleToAnalyzerAt: Date?
+        var droppedChunks = 0
         var conversionFailures = 0
         var lastConversionError: String?
         var volatileResults = 0
@@ -87,7 +92,8 @@ extension StreamDiagnostics.Snapshot {
             String(format: "  peak RMS %.5f, last sound %@", peakRMS, ago(lastSoundAt)),
             "transcriber: \(transcriberState)",
             "  analyzer format \(analyzerFormat)",
-            "  to analyzer: buffers \(buffersToAnalyzer), frames \(framesToAnalyzer), conversion failures \(conversionFailures)",
+            "  to analyzer: chunks \(buffersToAnalyzer), frames \(framesToAnalyzer), dropped \(droppedChunks), conversion failures \(conversionFailures)",
+            String(format: "  analyzer peak RMS %.5f, last audible %@", analyzerPeakRMS, ago(lastAudibleToAnalyzerAt)),
             "  last conversion error: \(lastConversionError ?? "none")",
             "  results: volatile \(volatileResults), final \(finalResults), last \(ago(lastResultAt))",
             "  last error: \(lastError ?? "none")",

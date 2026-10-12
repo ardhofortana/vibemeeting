@@ -156,14 +156,27 @@ final class MeetingSession: Identifiable {
     private static let cantHearMessage = "Can't hear the call. Check that VibeMeeting has audio capture permission, or open Audio check."
     private static let micMessage = "Can't use the microphone. Check that VibeMeeting has microphone permission."
 
+    static func message(for problem: SystemAudioTap.Problem) -> String {
+        switch problem {
+        case .silentWhileOthersPlay:
+            return CodeSigning.isAdHoc
+                ? "Can't hear the call: macOS gives this build only silence. It's signed without a Team, so its System Audio Recording permission resets on every rebuild. See Audio check."
+                : "Can't hear the call: macOS gives VibeMeeting only silence. Re-allow it under Privacy & Security → Screen & System Audio Recording → System Audio Recording Only, then restart the meeting."
+        case .unreadableBuffers, .noAudioIO:
+            return "Can't read system audio. Reconnecting…"
+        }
+    }
+
     private func handle(_ event: CapturePipeline.Event) {
         switch event {
         case .transcriberFailed(let speaker, let error):
             let kind: Notice.Kind = speaker == .them ? .themTranscriptionFailed : .youTranscriptionFailed
-            addNotice(kind, "Transcription for \(speaker.label) stopped: \(error.localizedDescription)")
+            addNotice(kind, "Transcription for \(speaker.label) stopped: \(LiveTranscriber.describe(error))")
         case .systemAudioFailed(let error):
             if status == .listening { status = .reconnecting }
             addNotice(.cantHearCall, "\(Self.cantHearMessage) (\(error.localizedDescription))")
+        case .systemAudioProblem(let problem):
+            addNotice(.cantHearCall, Self.message(for: problem))
         case .systemAudioReconnected:
             removeNotice(.cantHearCall)
             if status == .reconnecting { status = .listening }

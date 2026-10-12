@@ -1,0 +1,10 @@
+// Signing for VibeMeeting.
+//
+// macOS ties privacy permissions (System Audio Recording, Microphone) to the
+// app's signature. Without a Team, Xcode signs ad hoc ("Sign to Run Locally"),
+// every rebuild gets a new identity, and system audio can arrive as pure
+// silence even though the permission toggle looks on.
+//
+// Your Team lives in Configs/Local.xcconfig (not committed), so it survives
+// `xcodegen generate`. Create it with scripts/save-signing-team.sh.
+#include? "Local.xcconfig"

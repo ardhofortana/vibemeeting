@@ -25,6 +25,9 @@ targets:
       - path: VibeMeeting
         excludes:
           - "Resources/**"
+    configFiles:
+      Debug: Configs/Signing.xcconfig
+      Release: Configs/Signing.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ardhofortana.VibeMeeting

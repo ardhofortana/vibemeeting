@@ -1,22 +1,78 @@
 import AVFoundation
 import Foundation
 
-/// Converts capture buffers to the format the speech analyzer wants.
-///
-/// SpeechAnalyzer does not resample or downmix on its own, and AVAudioConverter
-/// can't always downmix unusual layouts (voice processing input reports 3, 5 or
-/// 9 channels). So every buffer is first mixed to mono Float32 by hand, and the
-/// converter only changes sample rate and sample type.
+/// How a capture buffer is folded to mono before it reaches the speech analyzer.
+enum MonoFold: Sendable {
+    /// Channel 0 only, for the microphone. With voice processing on, macOS presents
+    /// 3 to 9 discrete channels (channel 0 is the processed voice, the others can be
+    /// echo references). AVAudioConverter has no mix for that layout: it returns
+    /// correctly sized buffers full of zeros and reports success.
+    case firstChannel
+    /// The mean of all channels, for the stereo system-audio tap.
+    case average
+}
+
+enum MonoMixer {
+    /// A private mono Float32 copy at the source sample rate, or nil for empty or
+    /// unsupported buffers. Never aliases the input, so it's safe for Core Audio
+    /// buffers that only live for the duration of a callback.
+    static func mix(_ buffer: AVAudioPCMBuffer, fold: MonoFold) -> AVAudioPCMBuffer? {
+        let frames = Int(buffer.frameLength)
+        let channels = Int(buffer.format.channelCount)
+        guard frames > 0, channels > 0, buffer.format.sampleRate > 0,
+              let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
+              let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
+              let destination = output.floatChannelData?[0]
+        else { return nil }
+        output.frameLength = AVAudioFrameCount(frames)
+
+        let used = fold == .firstChannel ? 1 : channels
+        // 1 for deinterleaved buffers; the channel count for interleaved ones, whose
+        // channel pointers are then offset by one sample each.
+        let step = buffer.stride
+
+        switch buffer.format.commonFormat {
+        case .pcmFormatFloat32:
+            guard let data = buffer.floatChannelData else { return nil }
+            let scale = 1 / Float(used)
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<used { sum += data[channel][frame * step] }
+                destination[frame] = sum * scale
+            }
+        case .pcmFormatInt16:
+            guard let data = buffer.int16ChannelData else { return nil }
+            let scale = 1 / (Float(used) * 32_768)
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<used { sum += Float(data[channel][frame * step]) }
+                destination[frame] = sum * scale
+            }
+        case .pcmFormatInt32:
+            guard let data = buffer.int32ChannelData else { return nil }
+            let scale = 1 / (Float(used) * 2_147_483_648)
+            for frame in 0..<frames {
+                var sum: Float = 0
+                for channel in 0..<used { sum += Float(data[channel][frame * step]) }
+                destination[frame] = sum * scale
+            }
+        default:
+            return nil
+        }
+        return output
+    }
+}
+
+/// Converts private mono buffers to the analyzer's format (measured on macOS 26:
+/// 16 kHz, mono, Int16, interleaved). SpeechAnalyzer never resamples or converts.
 final class BufferConverter {
     enum Failure: Error, CustomStringConvertible {
-        case unsupportedSourceFormat(String)
         case cannotCreateConverter(from: String, to: String)
         case cannotCreateBuffer
         case conversionFailed(String)
 
         var description: String {
             switch self {
-            case .unsupportedSourceFormat(let format): return "unsupported source format \(format)"
             case .cannotCreateConverter(let from, let to): return "no converter from \(from) to \(to)"
             case .cannotCreateBuffer: return "couldn't allocate a conversion buffer"
             case .conversionFailed(let detail): return "conversion failed: \(detail)"
@@ -26,40 +82,42 @@ final class BufferConverter {
 
     private var converter: AVAudioConverter?
 
-    /// Returns nil when the converter produced no output yet (it may buffer a little).
+    /// Returns nil when this call produced no frames, which is normal while the
+    /// resampler fills. Never send an empty buffer to the analyzer.
     func convert(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> AVAudioPCMBuffer? {
         guard buffer.frameLength > 0 else { return nil }
-        guard let mono = MonoMixer.mix(buffer) else {
-            throw Failure.unsupportedSourceFormat(StreamDiagnostics.describe(buffer.format))
-        }
-        if mono.format == format { return mono }
+        // Callers pass private copies (MonoMixer output), so handing the input on is safe.
+        if buffer.format == format { return buffer }
 
-        if converter == nil || converter?.inputFormat != mono.format || converter?.outputFormat != format {
-            converter = AVAudioConverter(from: mono.format, to: format)
-            // Avoid timestamp drift from priming, as Apple's SpeechAnalyzer sample does.
-            converter?.primeMethod = .none
+        if converter == nil || converter?.inputFormat != buffer.format || converter?.outputFormat != format {
+            guard let made = AVAudioConverter(from: buffer.format, to: format) else {
+                throw Failure.cannotCreateConverter(from: StreamDiagnostics.describe(buffer.format), to: StreamDiagnostics.describe(format))
+            }
+            // As in Apple's SpeechAnalyzer sample: no priming, so output time doesn't drift.
+            made.primeMethod = .none
+            converter = made
         }
-        guard let converter else {
-            throw Failure.cannotCreateConverter(from: StreamDiagnostics.describe(mono.format), to: StreamDiagnostics.describe(format))
-        }
+        guard let converter else { throw Failure.cannotCreateBuffer }
 
-        let ratio = format.sampleRate / mono.format.sampleRate
-        let capacity = AVAudioFrameCount((Double(mono.frameLength) * ratio).rounded(.up)) + 16
+        let ratio = format.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 32
         guard let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else {
             throw Failure.cannotCreateBuffer
         }
 
         var error: NSError?
-        var consumed = false
+        var supplied = false
         let status = converter.convert(to: output, error: &error) { _, inputStatus in
-            if consumed {
+            if supplied {
+                // .noDataNow keeps the stream open for the next buffer (.endOfStream would end it).
                 inputStatus.pointee = .noDataNow
                 return nil
             }
-            consumed = true
+            supplied = true
             inputStatus.pointee = .haveData
-            return mono
+            return buffer
         }
+        // .inputRanDry is normal for streaming input; only .error is a failure.
         if status == .error {
             throw Failure.conversionFailed(error?.localizedDescription ?? "unknown error")
         }
@@ -67,61 +125,52 @@ final class BufferConverter {
     }
 }
 
-/// Mixes any PCM buffer down to a mono Float32 copy at the same sample rate.
-enum MonoMixer {
-    static func mix(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        let frames = Int(buffer.frameLength)
-        let channels = Int(buffer.format.channelCount)
-        guard frames > 0, channels > 0,
-              let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
-              let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
-              let destination = output.floatChannelData?[0]
-        else { return nil }
-        output.frameLength = AVAudioFrameCount(frames)
+/// Packs small converted buffers into ~100 ms chunks. The system tap delivers
+/// ~10 ms buffers; larger chunks keep the analyzer's input queue short.
+/// Requires a mono analyzer format (one AudioBuffer per AVAudioPCMBuffer).
+final class ChunkAccumulator {
+    private let format: AVAudioFormat
+    private let chunkFrames: AVAudioFrameCount
+    private let bytesPerFrame: Int
+    private var pending: AVAudioPCMBuffer?
 
-        // Stereo is averaged. With more channels (voice processing), the processed
-        // voice is on the first channel and the rest would only dilute it.
-        let used = channels <= 2 ? channels : 1
-        let scale = 1 / Float(used)
-        let interleaved = buffer.format.isInterleaved
+    init?(format: AVAudioFormat, seconds: Double = 0.1) {
+        let bytesPerFrame = Int(format.streamDescription.pointee.mBytesPerFrame)
+        guard format.channelCount == 1, bytesPerFrame > 0, format.sampleRate > 0 else { return nil }
+        self.format = format
+        self.bytesPerFrame = bytesPerFrame
+        self.chunkFrames = AVAudioFrameCount(max(1, (format.sampleRate * seconds).rounded()))
+    }
 
-        func sample(_ read: (Int) -> Float) {
-            for frame in 0..<frames {
-                var sum: Float = 0
-                for channel in 0..<used {
-                    sum += read(interleaved ? frame * channels + channel : channel * frames + frame)
-                }
-                destination[frame] = sum * scale
+    /// Appends `buffer` (which must be in `format`) and returns any full chunks.
+    func append(_ buffer: AVAudioPCMBuffer) -> [AVAudioPCMBuffer] {
+        guard buffer.format == format, let source = buffer.audioBufferList.pointee.mBuffers.mData else { return [] }
+        var ready: [AVAudioPCMBuffer] = []
+        var offset: AVAudioFrameCount = 0
+        while offset < buffer.frameLength {
+            if pending == nil {
+                pending = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames)
+            }
+            guard let chunk = pending, let destination = chunk.mutableAudioBufferList.pointee.mBuffers.mData else { break }
+            let take = min(chunk.frameCapacity - chunk.frameLength, buffer.frameLength - offset)
+            memcpy(destination + Int(chunk.frameLength) * bytesPerFrame,
+                   source + Int(offset) * bytesPerFrame,
+                   Int(take) * bytesPerFrame)
+            chunk.frameLength += take
+            offset += take
+            if chunk.frameLength == chunk.frameCapacity {
+                ready.append(chunk)
+                pending = nil
             }
         }
+        return ready
+    }
 
-        if let source = buffer.floatChannelData {
-            if interleaved {
-                let data = source[0]
-                sample { data[$0] }
-            } else {
-                sample { index in source[index / frames][index % frames] }
-            }
-        } else if let source = buffer.int16ChannelData {
-            let factor: Float = 1 / 32_768
-            if interleaved {
-                let data = source[0]
-                sample { Float(data[$0]) * factor }
-            } else {
-                sample { index in Float(source[index / frames][index % frames]) * factor }
-            }
-        } else if let source = buffer.int32ChannelData {
-            let factor: Float = 1 / 2_147_483_648
-            if interleaved {
-                let data = source[0]
-                sample { Float(data[$0]) * factor }
-            } else {
-                sample { index in Float(source[index / frames][index % frames]) * factor }
-            }
-        } else {
-            return nil
-        }
-        return output
+    /// The partial chunk, at the end of a stream.
+    func flush() -> AVAudioPCMBuffer? {
+        defer { pending = nil }
+        guard let pending, pending.frameLength > 0 else { return nil }
+        return pending
     }
 }
 

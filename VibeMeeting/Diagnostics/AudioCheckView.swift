@@ -50,8 +50,9 @@ final class AudioCheckModel {
 
     static func describe(_ event: CapturePipeline.Event) -> String {
         switch event {
-        case .transcriberFailed(let speaker, let error): return "Transcriber \(speaker.label) failed: \(String(describing: error))"
+        case .transcriberFailed(let speaker, let error): return "Transcriber \(speaker.label) failed: \(LiveTranscriber.describe(error))"
         case .systemAudioFailed(let error): return "System audio failed: \(String(describing: error))"
+        case .systemAudioProblem(let problem): return MeetingSession.message(for: problem)
         case .systemAudioReconnected: return "System audio reconnected"
         case .appAudioNotFound: return "Chosen app not playing; using all system audio"
         case .micFailed(let error): return "Microphone failed: \(String(describing: error))"
@@ -69,6 +70,18 @@ struct AudioCheckView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Audio check")
                 .font(.title2.weight(.semibold))
+
+            if CodeSigning.isAdHoc {
+                Label {
+                    Text("This build is signed without a Team (\"Sign to Run Locally\"). macOS resets its System Audio Recording permission on every rebuild, so system audio can arrive as pure silence even though the toggle looks on. Pick your Team under Signing & Capabilities and run `scripts/save-signing-team.sh` so it sticks.")
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                }
+                .font(.callout)
+            }
+            LabeledContent("System audio permission", value: SystemAudioPermission.status.rawValue)
+                .font(.callout)
 
             if let session = app.activeSession, session.isActive {
                 Text("A meeting is running, so this shows its live audio.")
@@ -178,7 +191,8 @@ struct DiagnosticsPanel: View {
                 row("Format", snapshot.sourceFormat)
                 row("Loudest", String(format: "%.4f", snapshot.peakRMS) + (snapshot.captureBuffers > 0 && snapshot.peakRMS <= AudioLevelMeter.silenceRMS ? " · only silence" : ""))
                 row("Transcriber", snapshot.transcriberState)
-                row("To speech", "\(snapshot.buffersToAnalyzer) buffers" + (snapshot.conversionFailures > 0 ? " · \(snapshot.conversionFailures) failed" : ""))
+                row("To speech", "\(snapshot.buffersToAnalyzer) chunks" + (snapshot.conversionFailures > 0 ? " · \(snapshot.conversionFailures) failed" : ""))
+                row("Speech gets", snapshot.buffersToAnalyzer == 0 ? "–" : (snapshot.analyzerPeakRMS > AudioLevelMeter.silenceRMS ? String(format: "sound (%.4f)", snapshot.analyzerPeakRMS) : "only silence"))
                 row("Results", "\(snapshot.volatileResults) live · \(snapshot.finalResults) final")
                 if let error = snapshot.lastError ?? snapshot.lastConversionError {
                     row("Error", error)

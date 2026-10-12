@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import Security
 import Speech
 
 /// System audio capture permission ("System Audio Recording Only" in Privacy & Security).
@@ -45,6 +46,30 @@ enum SystemAudioPermission {
     }
 }
 
+/// How this build is signed. macOS ties privacy permissions to the signature:
+/// an ad-hoc build ("Sign to Run Locally", no Team) gets a new identity on every
+/// rebuild, so System Settings can show the toggle on while this exact build
+/// only receives silence from system audio.
+enum CodeSigning {
+    static let teamIdentifier: String? = {
+        var code: SecCode?
+        guard SecCodeCopySelf(SecCSFlags(), &code) == errSecSuccess, let code else { return nil }
+        var staticCode: SecStaticCode?
+        guard SecCodeCopyStaticCode(code, SecCSFlags(), &staticCode) == errSecSuccess, let staticCode else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let dictionary = info as? [String: Any]
+        else { return nil }
+        return dictionary[kSecCodeInfoTeamIdentifier as String] as? String
+    }()
+
+    static var isAdHoc: Bool { teamIdentifier == nil }
+
+    static var summary: String {
+        teamIdentifier.map { "team \($0)" } ?? "ad-hoc (Sign to Run Locally): permissions reset on every rebuild"
+    }
+}
+
 /// A plain-text snapshot of the audio setup for the diagnostics report.
 enum AudioEnvironment {
     static func deviceName(_ device: AudioObjectID) -> String {
@@ -59,6 +84,7 @@ enum AudioEnvironment {
         let info = Bundle.main.infoDictionary
         lines.append("VibeMeeting \(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))")
         lines.append("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+        lines.append("code signing: \(CodeSigning.summary)")
         lines.append("system audio permission: \(SystemAudioPermission.status.rawValue)")
         let mic: String
         switch AVAudioApplication.shared.recordPermission {
