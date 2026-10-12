@@ -161,7 +161,7 @@ final class CapturePipeline {
         }
         // Runs on the Core Audio IO thread with a buffer the tap already copied:
         // hand it on and return. The serial queue keeps the order.
-        let handler: SystemAudioTap.BufferHandler = { buffer in
+        let handler: SystemAudioTap.BufferHandler = { buffer, _ in
             let owned = OwnedBuffer(buffer: buffer)
             processing.async {
                 diagnostics.recordCapture(owned.buffer, rms: meter.update(with: owned.buffer))
@@ -206,7 +206,7 @@ final class CapturePipeline {
             diagnostics.update { $0.captureState = "Starting" }
             // Buffers arrive mono (channel 0 with echo cancellation, live channels
             // averaged without), so the meter shows exactly what speech gets.
-            try mic.start(voiceProcessing: voiceProcessing) { buffer in
+            try mic.start(voiceProcessing: voiceProcessing) { buffer, _ in
                 diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
                 transcriber.append(buffer)
             }

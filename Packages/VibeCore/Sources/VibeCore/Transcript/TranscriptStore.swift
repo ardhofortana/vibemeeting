@@ -11,6 +11,9 @@ public struct TranscriptStore: Equatable, Sendable {
         public var maxPauseWithinTurn: TimeInterval
         /// How far back "You" text is compared with "Them" text for echo.
         public var echoWindow: TimeInterval
+        /// How long a "You" segment stays open to removal as echo when the
+        /// "Them" recognizer delivers the same words after it.
+        public var lateEchoWindow: TimeInterval
         /// "You" turns at or under this many words don't break up a "Them" turn
         /// when choosing the reply target ("yeah", "mm-hmm", "right").
         public var backchannelMaxWords: Int
@@ -20,11 +23,13 @@ public struct TranscriptStore: Equatable, Sendable {
         public init(
             maxPauseWithinTurn: TimeInterval = 6,
             echoWindow: TimeInterval = 12,
+            lateEchoWindow: TimeInterval = 2.5,
             backchannelMaxWords: Int = 3,
             maxMergedTargetTurns: Int = 4
         ) {
             self.maxPauseWithinTurn = maxPauseWithinTurn
             self.echoWindow = echoWindow
+            self.lateEchoWindow = lateEchoWindow
             self.backchannelMaxWords = backchannelMaxWords
             self.maxMergedTargetTurns = maxMergedTargetTurns
         }
@@ -34,6 +39,9 @@ public struct TranscriptStore: Equatable, Sendable {
     public var configuration: Configuration
     private var openTurnIDs: [Speaker: UUID] = [:]
     private var recentThemText: [(date: Date, text: String)] = []
+    /// "You" segments finalized in the last moments, checked again when the
+    /// "Them" text they may have echoed arrives after them.
+    private var recentYouSegments: [(date: Date, turnID: UUID, text: String)] = []
     /// Number of "You" segments dropped as speaker echo, for diagnostics.
     public private(set) var droppedEchoSegments = 0
 
@@ -68,8 +76,10 @@ public struct TranscriptStore: Equatable, Sendable {
             return
         }
 
-        if update.kind == .final, speaker == .you, isLikelyEcho(text, now: now) {
-            droppedEchoSegments += 1
+        // Their words heard again through the mic. Live text is held back too, so
+        // a double never flashes up.
+        if speaker == .you, EchoFilter.isLikelyEcho(text, reference: echoReference(now: now)) {
+            if update.kind == .final { droppedEchoSegments += 1 }
             if let index = openTurnIndex(for: speaker) {
                 turns[index].volatileText = ""
                 removeIfEmpty(at: index, speaker: speaker)
@@ -86,6 +96,13 @@ public struct TranscriptStore: Equatable, Sendable {
             turns[index].volatileText = ""
         }
         turns[index].updatedAt = now
+
+        guard update.kind == .final else { return }
+        if speaker == .you {
+            recentYouSegments.append((now, turns[index].id, text))
+        } else {
+            removeLateEchoes(now: now)
+        }
     }
 
     /// Closes all open turns, e.g. when the meeting ends. In-progress text is kept as final.
@@ -160,6 +177,30 @@ public struct TranscriptStore: Equatable, Sendable {
         )
     }
 
+    /// Everything said so far, for a reply: closed turns in fixed-size chunks
+    /// (a complete chunk never changes, so it can be cached across replies), then
+    /// the latest turns. Very long meetings drop their oldest chunks.
+    public func replyTranscript(
+        chunkSize: Int = 12,
+        keepRecent: Int = 8,
+        maxEarlierCharacters: Int = 60_000,
+        maxTurnCharacters: Int = 4_000
+    ) -> ReplyTranscript {
+        let size = max(1, chunkSize)
+        let spoken = turns.filter { !$0.text.isEmpty }.map { Self.clipped($0, to: maxTurnCharacters) }
+        var frozen = max(0, spoken.count - keepRecent) / size * size
+        // A turn still being spoken stays recent, with everything after it.
+        if let live = spoken[..<frozen].firstIndex(where: \.isLive) {
+            frozen = live / size * size
+        }
+        var chunks = stride(from: 0, to: frozen, by: size).map { Array(spoken[$0..<($0 + size)]) }
+        var characters = chunks.reduce(0) { $0 + Self.characters(in: $1) }
+        while characters > maxEarlierCharacters, !chunks.isEmpty {
+            characters -= Self.characters(in: chunks.removeFirst())
+        }
+        return ReplyTranscript(earlierChunks: chunks, recentTurns: Array(spoken[frozen...]))
+    }
+
     /// The most recent turns that fit the budget, oldest first. Keeps the
     /// prompt size flat no matter how long the meeting runs.
     public func recentTurns(maxTurns: Int = 16, maxCharacters: Int = 3_000) -> [TranscriptTurn] {
@@ -214,14 +255,65 @@ public struct TranscriptStore: Equatable, Sendable {
         recentThemText.removeAll { now.timeIntervalSince($0.date) > configuration.echoWindow }
     }
 
-    private func isLikelyEcho(_ text: String, now: Date) -> Bool {
+    /// What "Them" said recently, including what they're saying right now.
+    private func echoReference(now: Date) -> String {
         var reference = recentThemText
             .filter { now.timeIntervalSince($0.date) <= configuration.echoWindow }
             .map(\.text)
         if let index = openTurnIndex(for: .them) {
             reference.append(turns[index].volatileText)
         }
-        return EchoFilter.isLikelyEcho(text, reference: reference.joined(separator: " "))
+        return reference.joined(separator: " ")
+    }
+
+    /// The "Them" recognizer can finish a phrase after the "You" recognizer did.
+    /// Check the "You" segments of the last moments again now that it's here.
+    /// (Only briefly: when they repeat the user's words later, that's not echo.)
+    private mutating func removeLateEchoes(now: Date) {
+        recentYouSegments.removeAll { now.timeIntervalSince($0.date) > configuration.lateEchoWindow }
+        guard !recentYouSegments.isEmpty else { return }
+        let reference = echoReference(now: now)
+        var kept: [(date: Date, turnID: UUID, text: String)] = []
+        for segment in recentYouSegments {
+            guard EchoFilter.isLikelyEcho(segment.text, reference: reference),
+                  let index = turns.firstIndex(where: { $0.id == segment.turnID }),
+                  turns[index].editedText == nil,
+                  let range = turns[index].finalText.range(of: segment.text, options: .backwards)
+            else {
+                kept.append(segment)
+                continue
+            }
+            var remaining = turns[index].finalText
+            remaining.removeSubrange(range)
+            turns[index].finalText = remaining.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            droppedEchoSegments += 1
+            removeIfEmpty(at: index, speaker: .you)
+        }
+        recentYouSegments = kept
+    }
+
+    private static func clipped(_ turn: TranscriptTurn, to limit: Int) -> TranscriptTurn {
+        guard turn.text.count > limit else { return turn }
+        var clipped = turn
+        clipped.editedText = "…" + String(turn.text.suffix(limit))
+        return clipped
+    }
+
+    private static func characters(in turns: [TranscriptTurn]) -> Int {
+        turns.reduce(0) { $0 + $1.text.count }
+    }
+}
+
+/// The transcript a reply sees. See `TranscriptStore.replyTranscript`.
+public struct ReplyTranscript: Equatable, Sendable {
+    /// Closed turns in fixed-size chunks, oldest first.
+    public var earlierChunks: [[TranscriptTurn]]
+    /// The latest turns, including any still being spoken.
+    public var recentTurns: [TranscriptTurn]
+
+    public init(earlierChunks: [[TranscriptTurn]] = [], recentTurns: [TranscriptTurn]) {
+        self.earlierChunks = earlierChunks
+        self.recentTurns = recentTurns
     }
 }
 

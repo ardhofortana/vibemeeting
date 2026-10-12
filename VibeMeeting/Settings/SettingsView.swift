@@ -338,7 +338,7 @@ private struct AudioSettings: View {
 
             Section {
                 Toggle("Echo cancellation", isOn: $settings.voiceProcessing)
-                Text("Removes the call's sound coming from your speakers (including speakers on the headphone jack) from your mic. Skipped with Bluetooth headphones, AirPods and USB headsets. While it runs, macOS turns other apps down (the call too), and the call app's mic may get quieter. Without it, only near word-for-word English repeats of the other side are filtered out of \"You\", and only while the other side is being transcribed.")
+                Text("Apple's echo cancellation: removes the call's sound coming from your speakers (including speakers on the headphone jack) from your mic. Skipped with Bluetooth headphones, AirPods and USB headsets. While it runs, macOS turns other apps down (the call too), and the call app's mic may get quieter.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

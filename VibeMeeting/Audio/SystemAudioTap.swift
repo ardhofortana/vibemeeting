@@ -46,7 +46,8 @@ final class SystemAudioTap: @unchecked Sendable {
         }
     }
 
-    typealias BufferHandler = @Sendable (AVAudioPCMBuffer) -> Void
+    /// The buffer and the host time (mach ticks) of its first sample.
+    typealias BufferHandler = @Sendable (AVAudioPCMBuffer, _ hostTime: UInt64) -> Void
 
     /// Creates, destroys and rebuilds the tap; receives property notifications.
     private let controlQueue = DispatchQueue(label: "VibeMeeting.SystemAudioTap.control")
@@ -235,11 +236,12 @@ final class SystemAudioTap: @unchecked Sendable {
             // The IO block only copies and hands on; the handler must not do heavy work
             // here (CapturePipeline moves conversion to its own queue).
             let handler = self.handler
-            try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) { _, inputData, _, _, _ in
+            try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) { _, inputData, inputTime, _, _ in
                 // Copies the tap's samples out; the IO buffer list dies with this cycle.
                 // Unreadable cycles are counted inside TapStream (no lock traffic here).
                 guard let buffer = stream.read(inputData) else { return }
-                handler?(buffer)
+                let time = inputTime.pointee
+                handler?(buffer, time.mFlags.contains(.hostTimeValid) ? time.mHostTime : mach_absolute_time())
             }, "Creating IO proc")
 
             // Chromium's order: probe after creating the IO proc, before starting.

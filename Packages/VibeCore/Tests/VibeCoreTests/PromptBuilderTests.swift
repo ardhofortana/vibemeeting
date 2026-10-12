@@ -69,6 +69,49 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertNil(warmup.stream)
     }
 
+    func chunk(_ range: Range<Int>) -> [TranscriptTurn] {
+        range.map { index in
+            TranscriptTurn(speaker: index.isMultiple(of: 2) ? .them : .you, finalText: "Line \(index).", startedAt: Date(timeIntervalSince1970: Double(index)))
+        }
+    }
+
+    func testEarlierTranscriptIsSentInCachedChunks() throws {
+        var request = ask()
+        request.earlierChunks = [chunk(0..<3), chunk(3..<6)]
+        let built = ReplyPromptBuilder(model: .haiku55).request(meeting: meeting, ask: request)
+        XCTAssertEqual(built.cacheBreakpointCount, 4, "the API allows 4 breakpoints")
+        let content = built.messages[0].content
+        // Context (3 blocks), style, two chunks, ask.
+        XCTAssertEqual(content.count, 7)
+        XCTAssertEqual(content[4].text, "<earlier_transcript>\nThem: Line 0.\nYou: Line 1.\nThem: Line 2.\n")
+        XCTAssertNil(content[4].cacheControl)
+        XCTAssertEqual(content[5].text, "You: Line 3.\nThem: Line 4.\nYou: Line 5.\n")
+        XCTAssertNotNil(content[5].cacheControl)
+        XCTAssertTrue(content[6].text?.hasPrefix("</earlier_transcript>\n\n<recent_transcript>") == true)
+        XCTAssertNil(content[6].cacheControl)
+    }
+
+    func testGrowingTranscriptKeepsThePreviousReplysPrefix() {
+        let builder = ReplyPromptBuilder(model: .haiku55)
+        var first = ask()
+        first.earlierChunks = [chunk(0..<3)]
+        var second = ask("Another question?")
+        second.earlierChunks = [chunk(0..<3), chunk(3..<6)]
+        let a = builder.request(meeting: meeting, ask: first).messages[0].content
+        let b = builder.request(meeting: meeting, ask: second).messages[0].content
+        // Everything up to the old breakpoint is the same text; only the breakpoint moved.
+        XCTAssertEqual(a.dropLast().map(\.text), b.prefix(a.count - 1).map(\.text))
+
+        let warmup = builder.warmupRequest(meeting: meeting, earlierChunks: second.earlierChunks)
+        XCTAssertEqual(Array(warmup.messages[0].content.dropLast()), Array(b.dropLast()))
+    }
+
+    func testRulesAskToAnswerTheLatestAndOpenEarlierPoints() {
+        XCTAssertTrue(Prompts.replyRules.contains("Answer it first"))
+        XCTAssertTrue(Prompts.replyRules.contains("still needs a reply"))
+        XCTAssertFalse(Prompts.replyRules.contains("only as background"))
+    }
+
     func testEncodingIsDeterministic() throws {
         let builder = ReplyPromptBuilder(model: .haiku55)
         XCTAssertEqual(try builder.request(meeting: meeting, ask: ask()).encoded(), try builder.request(meeting: meeting, ask: ask()).encoded())

@@ -14,7 +14,8 @@ import Foundation
 /// audio, or its processed channel stays digitally silent. A route that failed
 /// once is not retried during this capture session.
 final class MicrophoneCapture: @unchecked Sendable {
-    typealias BufferHandler = @Sendable (AVAudioPCMBuffer) -> Void
+    /// An owned mono buffer and the host time (mach ticks) of its first sample.
+    typealias BufferHandler = @Sendable (AVAudioPCMBuffer, _ hostTime: UInt64) -> Void
 
     enum Failure: Error, LocalizedError {
         case noInputDevice
@@ -196,7 +197,7 @@ final class MicrophoneCapture: @unchecked Sendable {
 
         // Tap at the node's own format (always valid). ~100 ms buffers.
         let bufferSize = AVAudioFrameCount(max(format.sampleRate / 10, 1024))
-        input.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, _ in
+        input.installTap(onBus: 0, bufferSize: bufferSize, format: format) { buffer, when in
             guard let extraction = MonoExtractor.extract(buffer, policy: policy) else {
                 diagnostics?.update { $0.unreadableBuffers += 1 }
                 return
@@ -204,7 +205,7 @@ final class MicrophoneCapture: @unchecked Sendable {
             health.record(frames: Int(buffer.frameLength), extractedPeak: extraction.peak,
                           otherChannelsRMS: extraction.otherChannelsRMS)
             diagnostics?.recordChannels(extraction.channelRMS)
-            handler?(extraction.mono)
+            handler?(extraction.mono, when.isHostTimeValid ? when.hostTime : mach_absolute_time())
         }
         tapInstalled = true
 

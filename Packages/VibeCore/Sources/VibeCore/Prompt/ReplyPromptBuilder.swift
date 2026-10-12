@@ -15,10 +15,12 @@ public struct MeetingPromptContext: Equatable, Sendable {
     }
 }
 
-/// What a single Reply asks for (layers 5–6).
+/// What a single Reply asks for (the transcript and layers 5–6).
 public struct ReplyAsk: Equatable, Sendable {
     public var target: ReplyTarget
     public var recentTurns: [TranscriptTurn]
+    /// Older closed turns in fixed chunks (see `TranscriptStore.replyTranscript`).
+    public var earlierChunks: [[TranscriptTurn]]
     public var intent: ReplyIntent
     public var steer: String
     public var variant: ReplyVariant
@@ -28,6 +30,7 @@ public struct ReplyAsk: Equatable, Sendable {
     public init(
         target: ReplyTarget,
         recentTurns: [TranscriptTurn],
+        earlierChunks: [[TranscriptTurn]] = [],
         intent: ReplyIntent = .auto,
         steer: String = "",
         variant: ReplyVariant = .fresh,
@@ -35,6 +38,7 @@ public struct ReplyAsk: Equatable, Sendable {
     ) {
         self.target = target
         self.recentTurns = recentTurns
+        self.earlierChunks = earlierChunks
         self.intent = intent
         self.steer = steer
         self.variant = variant
@@ -47,8 +51,12 @@ public struct ReplyAsk: Equatable, Sendable {
 ///
 /// Layout:
 /// - system: output rules, About me ← breakpoint (shared by every meeting)
-/// - user: meeting context ← breakpoint, reply style ← breakpoint, then the
-///   uncached transcript window and request.
+/// - user: meeting context ← breakpoint, reply style ← breakpoint, the earlier
+///   transcript one block per chunk ← breakpoint on the last chunk, then the
+///   uncached recent transcript and request.
+///
+/// A new transcript chunk only appends a block, so the cache written by the
+/// previous reply is still a prefix and is found by the cache lookback.
 public struct ReplyPromptBuilder: Sendable {
     public var model: ClaudeModel
     public var maxTokens: Int
@@ -60,14 +68,17 @@ public struct ReplyPromptBuilder: Sendable {
 
     public func request(meeting: MeetingPromptContext, ask: ReplyAsk) -> MessagesRequest {
         var content = cachedMeetingBlocks(meeting)
+        content += Self.earlierTranscriptBlocks(ask.earlierChunks)
         content.append(.text(Self.askText(ask, preset: meeting.preset)))
         return baseRequest(meeting: meeting, userContent: content, stream: true, maxTokens: maxTokens)
     }
 
-    /// A `max_tokens: 0` request that writes layers 1–4 to the cache without
-    /// generating anything. Same model, thinking and effort as real replies.
-    public func warmupRequest(meeting: MeetingPromptContext) -> MessagesRequest {
+    /// A `max_tokens: 0` request that writes layers 1–4 (and the earlier
+    /// transcript) to the cache without generating anything. Same model, thinking
+    /// and effort as real replies.
+    public func warmupRequest(meeting: MeetingPromptContext, earlierChunks: [[TranscriptTurn]] = []) -> MessagesRequest {
         var content = cachedMeetingBlocks(meeting)
+        content += Self.earlierTranscriptBlocks(earlierChunks)
         content.append(.text("warmup"))
         return baseRequest(meeting: meeting, userContent: content, stream: nil, maxTokens: 0)
     }
@@ -141,14 +152,29 @@ public struct ReplyPromptBuilder: Sendable {
         return text
     }
 
-    /// Layers 5 and 6: the transcript window and the request itself.
+    /// The older transcript, one text block per chunk, cached at the last one.
+    /// Each block ends with a newline so lines never run together.
+    static func earlierTranscriptBlocks(_ chunks: [[TranscriptTurn]]) -> [ContentBlock] {
+        guard !chunks.isEmpty else { return [] }
+        var blocks = chunks.enumerated().map { index, chunk in
+            let lines = chunk.map(transcriptLine).joined(separator: "\n") + "\n"
+            return ContentBlock.text(index == 0 ? "<earlier_transcript>\n" + lines : lines)
+        }
+        blocks[blocks.count - 1] = blocks[blocks.count - 1].withCache(.ephemeral)
+        return blocks
+    }
+
+    static func transcriptLine(_ turn: TranscriptTurn) -> String {
+        "\(turn.speaker.label): \(turn.text)\(turn.isLive ? " …" : "")"
+    }
+
+    /// Layers 5 and 6: the recent transcript and the request itself.
     static func askText(_ ask: ReplyAsk, preset: StylePreset) -> String {
         var parts: [String] = []
 
-        let lines = ask.recentTurns.map { turn in
-            "\(turn.speaker.label): \(turn.text)\(turn.isLive ? " …" : "")"
-        }
-        parts.append("<recent_transcript>\n\(lines.isEmpty ? "(nothing yet)" : lines.joined(separator: "\n"))\n</recent_transcript>")
+        let lines = ask.recentTurns.map(transcriptLine)
+        let closing = ask.earlierChunks.isEmpty ? "" : "</earlier_transcript>\n\n"
+        parts.append(closing + "<recent_transcript>\n\(lines.isEmpty ? "(nothing yet)" : lines.joined(separator: "\n"))\n</recent_transcript>")
 
         var target = "<target speaker=\"\(ask.target.speaker.label)\">\n\(ask.target.text)\n</target>"
         if ask.target.isLive {

@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 import VibeCore
 
-/// Live subtitles grouped by turn. Auto-scrolls until the user scrolls up.
+/// Live subtitles grouped by turn. Follows the conversation until the user
+/// scrolls up, and again once they scroll back down or tap "Jump to live".
 struct SubtitleListView: View {
     let compact: Bool
     @Environment(MeetingSession.self) private var session
@@ -51,15 +52,26 @@ struct SubtitleListView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 4)
             }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40
-            } action: { _, atBottom in
-                pinnedToBottom = atBottom
+            // While following, growing text keeps the bottom in view as it lays out.
+            .defaultScrollAnchor(pinnedToBottom ? UnitPoint.bottom : nil, for: .sizeChanges)
+            .onScrollGeometryChange(for: ScrollState.self) { geometry in
+                ScrollState(
+                    offset: geometry.contentOffset.y,
+                    atBottom: geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 40
+                )
+            } action: { old, new in
+                // New text makes the content taller, which also leaves the bottom for a
+                // moment; that must not stop following. Only the user moving up does.
+                if new.atBottom {
+                    pinnedToBottom = true
+                } else if new.offset < old.offset - 1 {
+                    pinnedToBottom = false
+                }
             }
             .onChange(of: Self.liveKey(turns)) {
-                if pinnedToBottom {
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                }
+                guard pinnedToBottom else { return }
+                // After this update is laid out, so the new line is measured.
+                Task { @MainActor in proxy.scrollTo(Self.bottomID, anchor: .bottom) }
             }
             .onAppear { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
             .overlay(alignment: .bottom) {
@@ -106,8 +118,16 @@ struct SubtitleListView: View {
 
     static let bottomID = "live-bottom"
 
+    /// Changes whenever visible text grows anywhere near the end: a new turn, or
+    /// more words in one of the last turns (Them and You can grow at once).
     static func liveKey(_ turns: [TranscriptTurn]) -> String {
-        "\(turns.count)-\(turns.last?.text.count ?? 0)"
+        let tail = turns.suffix(3).map { "\($0.text.count)" }.joined(separator: ",")
+        return "\(turns.count)-\(tail)"
+    }
+
+    private struct ScrollState: Equatable {
+        var offset: CGFloat
+        var atBottom: Bool
     }
 }
 

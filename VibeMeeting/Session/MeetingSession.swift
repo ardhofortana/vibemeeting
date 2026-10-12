@@ -320,9 +320,12 @@ final class MeetingSession: Identifiable {
             return
         }
         let steer = steerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The whole conversation so far, so the reply can pick up earlier points.
+        let window = transcript.replyTranscript()
         let ask = ReplyAsk(
             target: target,
-            recentTurns: transcript.recentTurns(),
+            recentTurns: window.recentTurns,
+            earlierChunks: window.earlierChunks,
             intent: intent,
             steer: steer,
             variant: .fresh
@@ -369,9 +372,11 @@ final class MeetingSession: Identifiable {
             text: text,
             isLive: turns.contains(where: \.isLive)
         )
+        let window = transcript.replyTranscript()
         return ReplyAsk(
             target: target,
-            recentTurns: transcript.recentTurns(),
+            recentTurns: window.recentTurns,
+            earlierChunks: window.earlierChunks,
             intent: previous.intent,
             steer: previous.steer,
             variant: variant,
@@ -490,10 +495,12 @@ final class MeetingSession: Identifiable {
 
     // MARK: - Prompt cache
 
-    /// Writes layers 1–4 to the prompt cache so the first Reply is fast.
+    /// Writes layers 1–4 and the earlier transcript to the prompt cache so the
+    /// next Reply is fast.
     func warmCache() {
         guard settings.hasAPIKey else { return }
-        let request = ReplyPromptBuilder(model: settings.replyModel).warmupRequest(meeting: promptContext)
+        let request = ReplyPromptBuilder(model: settings.replyModel)
+            .warmupRequest(meeting: promptContext, earlierChunks: transcript.replyTranscript().earlierChunks)
         let client = self.client
         let model = settings.replyModel
         lastCacheTouch = Date()
