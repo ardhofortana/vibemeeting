@@ -18,6 +18,15 @@ final class ScriptTextTests: XCTestCase {
         ])
     }
 
+    func testFinishedQuestionsDropOutrosAndKeepPromptsWhenThatsAllThereIs() {
+        XCTAssertEqual(ScriptText.questions(from: "What is your budget?\nWho decides?\nI hope these help.", final: true),
+                       ["What is your budget?", "Who decides?"])
+        XCTAssertEqual(ScriptText.questions(from: "Walk me through your approval process.\nTell me about your current site.\n", final: true),
+                       ["Walk me through your approval process.", "Tell me about your current site."])
+        XCTAssertEqual(ScriptText.questions(from: "Sure, here they are:\n", final: true), [])
+        XCTAssertEqual(ScriptText.questions(from: "**What is the deadline?**", final: true), ["What is the deadline?"])
+    }
+
     func testQuestionStillStreamingIsShown() {
         XCTAssertEqual(ScriptText.questions(from: "What is your timeline?\nAnd who"), ["What is your timeline?", "And who"])
         XCTAssertEqual(ScriptText.questions(from: ""), [])

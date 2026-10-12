@@ -463,7 +463,7 @@ final class MeetingSession: Identifiable {
                 targetText: record.goal,
                 intent: .questions,
                 steer: ask.steer,
-                variant: ask.previousQuestions == nil ? .fresh : .regenerate,
+                variant: ask.previousQuestions?.isEmpty == false ? .regenerate : .fresh,
                 presetName: preset.name,
                 model: model.id
             )
@@ -471,10 +471,13 @@ final class MeetingSession: Identifiable {
         let isQuestions = initialScript.intent == .questions
         currentScript = initialScript
         replyState = .drafting
-        switch initialScript.variant {
-        case .fresh: record.stats.replyCount += 1
-        case .regenerate: record.stats.regenerateCount += 1
-        case .shorter: record.stats.shorterCount += 1
+        // Reply metrics (PRD regenerate rate) count replies only.
+        if !isQuestions {
+            switch initialScript.variant {
+            case .fresh: record.stats.replyCount += 1
+            case .regenerate: record.stats.regenerateCount += 1
+            case .shorter: record.stats.shorterCount += 1
+            }
         }
 
         let client = self.client
@@ -511,10 +514,22 @@ final class MeetingSession: Identifiable {
                         throw ClaudeError.refusal(category: nil)
                     }
                     script.totalLatency = Self.seconds(start.duration(to: clock.now))
-                    // Questions keep one per line; a script is one spoken paragraph.
-                    script.text = isQuestions
-                        ? ScriptText.questions(from: script.text).joined(separator: "\n")
-                        : ScriptText.sanitize(script.text)
+                    if isQuestions {
+                        // One question per line; nothing usable is a failure, not an empty card.
+                        let questions = ScriptText.questions(from: script.text, final: true)
+                        guard !questions.isEmpty else {
+                            if let usage = script.usage {
+                                self.record.stats.usage += usage
+                                self.record.stats.estimatedCost += model.pricing?.cost(of: usage) ?? 0
+                            }
+                            self.record.stats.failedCount += 1
+                            self.replyState = .failed("No questions came back. Try again.")
+                            return
+                        }
+                        script.text = questions.joined(separator: "\n")
+                    } else {
+                        script.text = ScriptText.sanitize(script.text)
+                    }
                     self.finish(script, model: model)
                     return
                 } catch is CancellationError {
@@ -540,7 +555,7 @@ final class MeetingSession: Identifiable {
         currentScript = script
         replyState = .done
         record.scripts.append(script)
-        if let latency = script.firstTokenLatency {
+        if script.intent != .questions, let latency = script.firstTokenLatency {
             record.stats.firstTokenLatencies.append(latency)
         }
         if let usage = script.usage {

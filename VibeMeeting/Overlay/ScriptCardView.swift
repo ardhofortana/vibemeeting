@@ -58,13 +58,17 @@ struct ScriptCardView: View {
                 historyMenu
             }
 
-            if script.text.isEmpty {
+            if script.text.isEmpty && session.replyState != .done {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text(isQuestions ? "Thinking of questions…" : "Drafting…").foregroundStyle(.secondary)
                 }
+            } else if script.text.isEmpty {
+                Text("Nothing came back. Try Regenerate.").foregroundStyle(.secondary)
             } else if isQuestions {
-                QuestionList(questions: ScriptText.questions(from: script.text))
+                // A different set starts with nothing marked as copied.
+                QuestionList(questions: ScriptText.questions(from: script.text, final: session.replyState == .done))
+                    .id(script.id)
             } else {
                 Text(Self.styled(ScriptText.sanitize(script.text)))
                     .font(.title3)
@@ -84,7 +88,7 @@ struct ScriptCardView: View {
                 }
                 Button(isQuestions ? "Copy all" : "Copy") {
                     let text = isQuestions
-                        ? ScriptText.questions(from: script.text).joined(separator: "\n")
+                        ? ScriptText.questions(from: script.text, final: true).joined(separator: "\n")
                         : ScriptText.sanitize(script.text)
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
@@ -124,7 +128,7 @@ struct ScriptCardView: View {
                     session.showScript(script)
                 } label: {
                     let preview = script.intent == .questions
-                        ? "Questions: " + (ScriptText.questions(from: script.text).first ?? "")
+                        ? "Questions: " + (ScriptText.questions(from: script.text, final: true).first ?? "")
                         : ScriptText.sanitize(script.text)
                     Text(String(preview.prefix(70)))
                 }
@@ -179,7 +183,8 @@ struct ScriptCardView: View {
 /// Ask questions results: numbered, most useful first. Clicking one copies it.
 private struct QuestionList: View {
     let questions: [String]
-    @State private var copied: Int?
+    /// The question last copied (by text, so lines shifting while streaming don't move the mark).
+    @State private var copied: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -187,7 +192,7 @@ private struct QuestionList: View {
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(question, forType: .string)
-                    copied = index
+                    copied = question
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(index + 1).")
@@ -198,7 +203,7 @@ private struct QuestionList: View {
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 4)
-                        if copied == index {
+                        if copied == question {
                             Image(systemName: "checkmark")
                                 .font(.caption)
                                 .foregroundStyle(.green)

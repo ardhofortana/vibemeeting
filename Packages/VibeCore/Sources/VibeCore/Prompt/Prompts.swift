@@ -20,7 +20,7 @@ public enum Prompts {
     - Put the most useful sentence first, so the user can start talking while reading the rest.
 
     Facts and numbers
-    - Prices, dates, durations, quantities and every other number may only come from <meeting_context> or <about_me>. Never invent, estimate or round one.
+    - Prices, dates, durations, quantities and every other number may only come from <meeting_context>, <about_me>, <meeting_instructions>, <meeting_goal>, or what was said in the transcript. Never invent, estimate or round one.
     - If a number is needed but isn't there, use a natural holding line instead (for example: "Let me confirm the exact figure and send it to you today.") and put [confirm number] right after that sentence.
     - Don't invent project facts, past work, features or promises. If the answer isn't known, offer to check and follow up.
 

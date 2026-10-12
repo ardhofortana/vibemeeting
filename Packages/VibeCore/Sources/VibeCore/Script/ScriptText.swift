@@ -35,27 +35,31 @@ public enum ScriptText {
     }
 
     /// The questions of an Ask questions result, one per line, cleaned up. Drops
-    /// numbering, bullets and any intro line that isn't a question; while the
-    /// last line is still streaming it's kept as it is.
-    public static func questions(from text: String) -> [String] {
+    /// numbering, bullets, an intro ("Here are some questions:") and lines that
+    /// aren't questions ("I hope these help."). While streaming (`final` false)
+    /// the line being written is kept as it is. When finished, if no line is a
+    /// question (the model wrote prompts like "Walk me through your process."),
+    /// those lines are returned rather than nothing.
+    public static func questions(from text: String, final: Bool = false) -> [String] {
         let lines = text.components(separatedBy: .newlines)
         var questions: [String] = []
+        var others: [String] = []
         for (index, raw) in lines.enumerated() {
-            var line = raw.trimmingCharacters(in: .whitespaces)
+            var line = raw.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespaces)
             // "1. ", "2) ", "- ", "• "
-            if let match = line.range(of: #"^(\d{1,2}[.)]|[-•*])\s+"#, options: .regularExpression) {
+            if let match = line.range(of: #"^(\d{1,2}[.)]|[-•])\s+"#, options: .regularExpression) {
                 line.removeSubrange(match)
             }
             line = sanitize(line)
-            guard !line.isEmpty else { continue }
-            let isLast = index == lines.count - 1
-            // An intro like "Here are some questions:" is dropped; so is any finished
-            // line that isn't a question. The line being written stays.
-            if line.hasSuffix(":") { continue }
-            if !isLast, !line.contains("?") { continue }
-            questions.append(line)
+            guard !line.isEmpty, !line.hasSuffix(":") else { continue }
+            let beingWritten = !final && index == lines.count - 1
+            if line.contains("?") || beingWritten {
+                questions.append(line)
+            } else {
+                others.append(line)
+            }
         }
-        return questions
+        return final && questions.isEmpty ? others : questions
     }
 
     /// Splits off the first sentence so it can be shown in bold. While a

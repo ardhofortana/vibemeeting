@@ -118,6 +118,7 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertFalse(without[3].text?.contains("meeting_goal") == true)
         XCTAssertTrue(Prompts.replyRules.contains("<meeting_goal>"))
         XCTAssertTrue(Prompts.replyRules.contains("wins over the meeting goal"))
+        XCTAssertTrue(Prompts.replyRules.contains("<meeting_goal>, or what was said in the transcript. Never invent"))
     }
 
     func testQuestionsShareTheReplyPrefix() {

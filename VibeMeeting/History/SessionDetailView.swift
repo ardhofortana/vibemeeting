@@ -215,11 +215,11 @@ struct SessionDetailView: View {
             } else {
                 List(record.scripts.reversed()) { script in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("“\(script.targetText)”")
+                        Text(Self.scriptHeader(script))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
-                        Text(ScriptText.sanitize(script.text))
+                        Text(Self.scriptBody(script, numbered: true))
                             .textSelection(.enabled)
                         Text(scriptMeta(script))
                             .font(.caption2)
@@ -227,11 +227,26 @@ struct SessionDetailView: View {
                     }
                     .padding(.vertical, 4)
                     .contextMenu {
-                        Button("Copy") { copy(ScriptText.sanitize(script.text)) }
+                        Button("Copy") { copy(Self.scriptBody(script, numbered: false)) }
                     }
                 }
             }
         }
+    }
+
+    /// What a script answered, or what Ask questions aimed at.
+    static func scriptHeader(_ script: ReplyScript) -> String {
+        guard script.intent == .questions else { return "“\(script.targetText)”" }
+        return script.targetText.isEmpty ? "Questions to ask them" : "Questions toward: \(script.targetText)"
+    }
+
+    /// The script as one paragraph, or Ask questions as one question per line.
+    static func scriptBody(_ script: ReplyScript, numbered: Bool) -> String {
+        guard script.intent == .questions else { return ScriptText.sanitize(script.text) }
+        let questions = ScriptText.questions(from: script.text, final: true)
+        return questions.enumerated()
+            .map { numbered ? "\($0.offset + 1). \($0.element)" : $0.element }
+            .joined(separator: "\n")
     }
 
     private func scriptMeta(_ script: ReplyScript) -> String {
