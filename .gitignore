@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Xcode (the project is generated from project.yml by XcodeGen)
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+build/
+
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Local secrets
+*.env
