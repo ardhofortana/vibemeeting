@@ -36,6 +36,8 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: VibeMeeting/Resources/VibeMeeting.entitlements
         CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_HARDENED_RUNTIME: YES
         # Set by scripts/release.sh; see CHANGELOG.md.
         MARKETING_VERSION: 0.5.0

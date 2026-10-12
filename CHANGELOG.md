@@ -49,6 +49,7 @@ Catatan:
 
 ### Ditambahkan
 - **Overlay split 50:50.** Transkrip di kiri, semua respon meeting (Reply dan Ask questions) di kanan, dari yang terlama sampai yang terbaru. Daftar respon tersimpan dan bisa di-scroll selama meeting, ikut turun saat ada respon baru, dan berhenti mengikuti kalau kamu scroll ke atas ("Jump to latest" untuk kembali). Respon terbaru disorot dan punya tombol Regenerate/Shorter; semua respon bisa di-Copy. Mode Compact (satu kolom sempit) tetap ada lewat tombol di header atau Settings → Overlay.
+- **App icon dan warna brand.** Logo VibeMeeting jadi app icon (semua ukuran macOS) dan ikon menu bar (bar gelombang; dalam lingkaran saat meeting berjalan). Warna dari logo (cyan, biru, ungu, magenta) dipakai sebagai aksen saja: tombol utama dan sorotan pakai biru brand, meter level dan garis tipis di atas overlay pakai gradasinya, ikon goal dan Ask questions pakai ungu. Warna status (hijau/oranye/merah) tetap seperti biasa.
 - `scripts/tag-versions.sh`: membuat tag `vX.Y.Z` untuk semua versi di changelog, supaya rollback bisa pakai `git checkout vX.Y.Z`.
 
 ## [0.5.0] - 2026-10-12

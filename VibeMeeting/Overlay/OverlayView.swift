@@ -12,6 +12,10 @@ struct OverlayView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // A thin line in the logo's gradient: the overlay's only large accent.
+            Brand.gradient()
+                .frame(height: 2)
+                .opacity(0.9)
             OverlayHeader(controller: controller)
             GoalLine()
             if !session.notices.isEmpty {
@@ -180,7 +184,9 @@ private struct LevelMeter: View {
             ZStack(alignment: .bottom) {
                 Capsule().fill(.quaternary)
                 Capsule()
-                    .fill(level > 0.05 ? Color.green : Color.secondary)
+                    .fill(level > 0.05
+                          ? AnyShapeStyle(Brand.gradient(startPoint: .bottom, endPoint: .top))
+                          : AnyShapeStyle(Color.secondary))
                     .frame(height: max(2, geometry.size.height * CGFloat(level)))
             }
         }
@@ -207,6 +213,7 @@ private struct GoalLine: View {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Image(systemName: "target")
                     .font(.caption2)
+                    .foregroundStyle(goal.isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Brand.violet))
                 Text(goal.isEmpty ? "Set a goal for this meeting" : goal)
                     .font(.caption)
                     .lineLimit(2)

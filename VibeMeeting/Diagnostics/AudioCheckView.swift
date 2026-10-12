@@ -197,7 +197,7 @@ struct DiagnosticsPanel: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.headline)
             ProgressView(value: Double(level))
-                .tint(level > 0.05 ? .green : .secondary)
+                .tint(level > 0.05 ? Brand.accent : .secondary)
             let lines = transcript.turns.filter { $0.speaker == speaker }.suffix(3)
             Group {
                 if lines.isEmpty {

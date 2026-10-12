@@ -48,10 +48,11 @@ private struct MenuBarIcon: View {
     @Environment(AppModel.self) private var app
 
     var body: some View {
+        // Template images from the logo's bars, tinted by the menu bar.
         if app.activeSession?.isActive == true {
-            Image(systemName: "waveform.circle.fill")
+            Image("MenuBarLive")
         } else {
-            Image(systemName: "waveform")
+            Image("MenuBarIdle")
         }
     }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import VibeCore
 
@@ -12,9 +13,9 @@ struct WelcomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(spacing: 12) {
-                Image(systemName: "waveform.badge.mic")
-                    .font(.system(size: 34))
-                    .foregroundStyle(Color.accentColor)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 56, height: 56)
                 Text("VibeMeeting")
                     .font(.largeTitle.weight(.bold))
             }
@@ -85,7 +86,7 @@ struct WelcomeView: View {
             Text("\(number)")
                 .font(.headline)
                 .frame(width: 26, height: 26)
-                .background(Color.accentColor.opacity(0.15), in: Circle())
+                .background(Brand.accent.opacity(0.15), in: Circle())
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).font(.headline)
                 content()

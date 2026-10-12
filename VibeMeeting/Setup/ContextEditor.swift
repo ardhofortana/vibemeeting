@@ -89,11 +89,11 @@ struct ContextEditor: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(isTargeted ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .background(isTargeted ? Brand.accent.opacity(0.12) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary.opacity(0.4))
+                .foregroundStyle(isTargeted ? Brand.accent : Color.secondary.opacity(0.4))
         )
         .dropDestination(for: URL.self) { urls, _ in
             importFiles(urls)

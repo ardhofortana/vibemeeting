@@ -206,12 +206,12 @@ extension View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                highlighted ? Color.accentColor.opacity(0.08) : Color.secondary.opacity(0.06),
+                highlighted ? Brand.accent.opacity(0.08) : Color.secondary.opacity(0.06),
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(highlighted ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.12))
+                    .strokeBorder(highlighted ? Brand.accent.opacity(0.25) : Color.secondary.opacity(0.12))
             )
     }
 }

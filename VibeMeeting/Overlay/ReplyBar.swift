@@ -24,7 +24,12 @@ struct ReplyBar: View {
                     session.askQuestions()
                     controller.releaseFocus()
                 } label: {
-                    Label("Ask questions", systemImage: "questionmark.bubble")
+                    Label {
+                        Text("Ask questions")
+                    } icon: {
+                        Image(systemName: "questionmark.bubble")
+                            .foregroundStyle(Brand.violet)
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)

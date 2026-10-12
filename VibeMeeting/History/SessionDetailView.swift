@@ -197,7 +197,7 @@ struct SessionDetailView: View {
                             .frame(width: 56, alignment: .leading)
                         Text(turn.speaker.label)
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(turn.speaker == .them ? Color.accentColor : Color.secondary)
+                            .foregroundStyle(turn.speaker == .them ? Brand.accent : Color.secondary)
                             .frame(width: 40, alignment: .leading)
                         Text(turn.text)
                             .textSelection(.enabled)

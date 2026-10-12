@@ -88,13 +88,13 @@ private struct TurnRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(isTarget ? Color.accentColor : Color.clear)
+                .fill(isTarget ? Brand.accent : Color.clear)
                 .frame(width: 3)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Text(turn.speaker.label)
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(turn.speaker == .them ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(turn.speaker == .them ? Brand.accent : Color.secondary)
                     if turn.editedText != nil {
                         Text("edited")
                             .font(.caption2)
@@ -103,7 +103,7 @@ private struct TurnRow: View {
                     if isSelected {
                         Text("target")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(Brand.accent)
                     }
                 }
                 text
@@ -114,7 +114,7 @@ private struct TurnRow: View {
             }
         }
         .padding(.vertical, 2)
-        .background(isSelected ? Color.accentColor.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+        .background(isSelected ? Brand.accent.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
         .opacity(turn.speaker == .you ? 0.75 : 1)
     }
 

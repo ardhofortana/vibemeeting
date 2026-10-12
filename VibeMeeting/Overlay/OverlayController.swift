@@ -119,6 +119,7 @@ final class OverlayController {
         let root = OverlayView(controller: self)
             .environment(app)
             .environment(session)
+            .tint(Brand.accent)
         panel.contentView = NSHostingView(rootView: root)
 
         if !panel.setFrameUsingName(Self.autosaveName), let screen = NSScreen.main {

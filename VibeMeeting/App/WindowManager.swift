@@ -66,7 +66,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let controller = NSHostingController(rootView: content().environment(app))
+        let controller = NSHostingController(rootView: content().environment(app).tint(Brand.accent))
         let window = NSWindow(contentViewController: controller)
         window.title = title
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]

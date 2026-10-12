@@ -69,7 +69,14 @@ private struct GeneralSettings: View {
             }
 
             Section {
-                LabeledContent("Version", value: AppVersion.display)
+                LabeledContent("Version") {
+                    HStack(spacing: 8) {
+                        Text(AppVersion.display)
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable()
+                            .frame(width: 22, height: 22)
+                    }
+                }
             } footer: {
                 Text("What changed in each version, and how to go back to an earlier one: CHANGELOG.md in the project folder.")
                     .font(.caption)
