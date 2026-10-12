@@ -13,14 +13,42 @@ final class OverlayController {
     private var panel: OverlayPanel?
 
     static let autosaveName = "VibeMeetingOverlay"
+    /// Split layout: transcript and responses side by side.
+    static let splitSize = CGSize(width: 780, height: 600)
+    static let splitMinSize = CGSize(width: 620, height: 300)
+    /// Compact layout: one narrow column.
+    static let compactSize = CGSize(width: 420, height: 560)
+    static let compactMinSize = CGSize(width: 340, height: 260)
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
     func show(session: MeetingSession, app: AppModel) {
+        let isNew = self.panel == nil
         let panel = self.panel ?? makePanel(session: session, app: app)
         self.panel = panel
         apply(settings: app.settings, to: panel)
+        // A frame saved by an older, narrower overlay is widened for the split.
+        if isNew { applyLayout(compact: app.settings.compactOverlay) }
         panel.orderFrontRegardless()
+    }
+
+    /// Resizes the panel for the layout, keeping its top-right corner in place
+    /// and the whole panel on screen.
+    func applyLayout(compact: Bool) {
+        guard let panel else { return }
+        let minSize = compact ? Self.compactMinSize : Self.splitMinSize
+        panel.contentMinSize = minSize
+        var frame = panel.frame
+        let width = compact ? Self.compactSize.width : max(frame.width, Self.splitSize.width)
+        let height = max(frame.height, minSize.height)
+        guard width != frame.width || height != frame.height else { return }
+        frame = CGRect(x: frame.maxX - width, y: frame.maxY - height, width: width, height: height)
+        if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame {
+            frame.size.width = min(frame.width, visible.width)
+            frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+        }
+        panel.setFrame(frame, display: true, animate: false)
     }
 
     func toggle(session: MeetingSession, app: AppModel) {
@@ -64,7 +92,7 @@ final class OverlayController {
     }
 
     private func makePanel(session: MeetingSession, app: AppModel) -> OverlayPanel {
-        let size = CGSize(width: 420, height: 560)
+        let size = app.settings.compactOverlay ? Self.compactSize : Self.splitSize
         let panel = OverlayPanel(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.nonactivatingPanel, .titled, .resizable, .fullSizeContentView],
@@ -86,7 +114,7 @@ final class OverlayController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.contentMinSize = CGSize(width: 340, height: 260)
+        panel.contentMinSize = app.settings.compactOverlay ? Self.compactMinSize : Self.splitMinSize
 
         let root = OverlayView(controller: self)
             .environment(app)

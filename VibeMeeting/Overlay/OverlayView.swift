@@ -2,7 +2,9 @@ import AppKit
 import SwiftUI
 import VibeCore
 
-/// The live overlay: header, subtitles, script card, reply bar, hotkey hints.
+/// The live overlay: header, goal, then the transcript and every response
+/// side by side (50:50), the reply bar and hotkey hints. Compact mode stacks
+/// the last subtitles and the current script in one narrow column.
 struct OverlayView: View {
     let controller: OverlayController
     @Environment(AppModel.self) private var app
@@ -15,11 +17,27 @@ struct OverlayView: View {
             if !session.notices.isEmpty {
                 NoticeList()
             }
-            SubtitleListView(compact: app.settings.compactOverlay)
+            if app.settings.compactOverlay {
+                SubtitleListView(compact: true)
+                    .frame(maxHeight: .infinity)
+                ScriptCardView()
+            } else {
+                HStack(spacing: 0) {
+                    column("Transcript") {
+                        SubtitleListView(compact: false)
+                    }
+                    Divider()
+                    column("Responses") {
+                        ResponseListView()
+                    }
+                }
                 .frame(maxHeight: .infinity)
-            ScriptCardView()
+            }
             ReplyBar(controller: controller)
             HotkeyHints()
+        }
+        .onChange(of: app.settings.compactOverlay) { _, compact in
+            controller.applyLayout(compact: compact)
         }
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -28,6 +46,22 @@ struct OverlayView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .ignoresSafeArea()
+    }
+}
+
+extension OverlayView {
+    /// One half of the split: a small title over its content, equal width.
+    private func column<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .padding(.horizontal, 12)
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -107,7 +141,7 @@ private struct OverlayHeader: View {
                 Image(systemName: settings.compactOverlay ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
             }
             .buttonStyle(.borderless)
-            .help(settings.compactOverlay ? "Full transcript" : "Compact mode")
+            .help(settings.compactOverlay ? "Transcript and responses side by side" : "Compact mode")
 
             Button("End meeting") {
                 Task { await app.endMeeting() }

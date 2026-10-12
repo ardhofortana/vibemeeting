@@ -49,7 +49,7 @@ Saat pertama kali dibuka, jendela Welcome memandu tiga hal:
 | Fase | Langkah |
 | --- | --- |
 | Sebelum | Menu bar → **New meeting** → isi nama (opsional) dan **Goal** (yang ingin dicapai dari meeting ini), drop file atau paste konteks → pilih **Reply style** → **Start listening** |
-| Selama | Subtitle mengalir di overlay. Tekan **⌥Space** setelah lawan bicara selesai bicara; script menjawab dulu, lalu mengarahkan pembicaraan ke goal. **Ask questions (⌥Q)** memberi 3–5 pertanyaan untuk lawan bicara supaya arah meeting makin jelas (bisa sebelum ada yang bicara; teks Steer memfokuskannya, klik satu pertanyaan untuk menyalinnya). Klik goal di bawah header untuk mengubahnya. Klik satu giliran untuk menjadikannya target, atau klik dua kali untuk memperbaiki salah dengar |
+| Selama | Overlay terbagi dua: transkrip di kiri, semua respon meeting di kanan (bisa di-scroll; tombol di header mengganti ke mode Compact satu kolom). Subtitle mengalir di kiri. Tekan **⌥Space** setelah lawan bicara selesai bicara; script menjawab dulu, lalu mengarahkan pembicaraan ke goal. **Ask questions (⌥Q)** memberi 3–5 pertanyaan untuk lawan bicara supaya arah meeting makin jelas (bisa sebelum ada yang bicara; teks Steer memfokuskannya, klik satu pertanyaan untuk menyalinnya). Klik goal di bawah header untuk mengubahnya. Klik satu giliran untuk menjadikannya target, atau klik dua kali untuk memperbaiki salah dengar |
 | Setelah | **End meeting**. Rekap dibuat otomatis (termasuk seberapa jauh goal tercapai), lalu bisa di-**Copy as Markdown** atau di-export ke .md |
 
 Hotkey (bisa diubah di Settings → Hotkeys, dan hanya aktif selama meeting berjalan):

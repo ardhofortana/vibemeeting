@@ -412,7 +412,7 @@ private struct OverlaySettings: View {
                 Slider(value: $settings.overlayOpacity, in: 0.4...1) {
                     Text("Background opacity")
                 }
-                Toggle("Compact mode (last two turns and the script)", isOn: $settings.compactOverlay)
+                Toggle("Compact mode: one narrow column with the last two turns and the current script (instead of transcript and responses side by side)", isOn: $settings.compactOverlay)
             }
             Section {
                 Toggle("Hide from screen sharing", isOn: $settings.hideFromScreenSharing)

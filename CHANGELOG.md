@@ -48,6 +48,7 @@ Catatan:
 ## [Unreleased]
 
 ### Ditambahkan
+- **Overlay split 50:50.** Transkrip di kiri, semua respon meeting (Reply dan Ask questions) di kanan, dari yang terlama sampai yang terbaru. Daftar respon tersimpan dan bisa di-scroll selama meeting, ikut turun saat ada respon baru, dan berhenti mengikuti kalau kamu scroll ke atas ("Jump to latest" untuk kembali). Respon terbaru disorot dan punya tombol Regenerate/Shorter; semua respon bisa di-Copy. Mode Compact (satu kolom sempit) tetap ada lewat tombol di header atau Settings → Overlay.
 - `scripts/tag-versions.sh`: membuat tag `vX.Y.Z` untuk semua versi di changelog, supaya rollback bisa pakai `git checkout vX.Y.Z`.
 
 ## [0.5.0] - 2026-10-12
