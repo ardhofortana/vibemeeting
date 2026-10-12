@@ -153,10 +153,14 @@ private struct TurnRow: View {
         if let edited = turn.editedText {
             return Text(edited)
         }
-        let finalPart = Text(turn.finalText)
-        guard !turn.volatileText.isEmpty else { return finalPart }
-        let live = Text((turn.finalText.isEmpty ? "" : " ") + turn.volatileText).foregroundStyle(.secondary)
-        return finalPart + live
+        var text = AttributedString(turn.finalText)
+        if !turn.volatileText.isEmpty {
+            // Text that may still change is shown dimmer.
+            var live = AttributedString((turn.finalText.isEmpty ? "" : " ") + turn.volatileText)
+            live.foregroundColor = Color.secondary
+            text += live
+        }
+        return Text(text)
     }
 }
 

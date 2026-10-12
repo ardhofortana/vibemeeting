@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     container: swift:6.0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Start local SSE server for transport tests
         run: |
           apt-get update -qq && apt-get install -y -qq python3 > /dev/null
@@ -30,7 +30,7 @@ jobs:
     name: App build (macOS 26)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Toolchain
         run: |
           xcodebuild -version

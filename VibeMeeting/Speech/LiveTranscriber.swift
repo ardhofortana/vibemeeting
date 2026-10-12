@@ -18,7 +18,8 @@ final class LiveTranscriber: @unchecked Sendable {
         }
     }
 
-    typealias UpdateHandler = @Sendable (TranscriptUpdate) -> Void
+    /// Runs on the main actor; results are delivered one at a time, in order.
+    typealias UpdateHandler = @MainActor @Sendable (TranscriptUpdate) -> Void
 
     let speaker: Speaker
     private let lock = NSLock()
@@ -75,7 +76,8 @@ final class LiveTranscriber: @unchecked Sendable {
             do {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters)
-                    onUpdate(TranscriptUpdate(speaker: speaker, kind: result.isFinal ? .final : .volatile, text: text))
+                    // Awaiting keeps volatile and final results in order.
+                    await onUpdate(TranscriptUpdate(speaker: speaker, kind: result.isFinal ? .final : .volatile, text: text))
                 }
             } catch is CancellationError {
             } catch {
@@ -85,11 +87,11 @@ final class LiveTranscriber: @unchecked Sendable {
 
         try await analyzer.start(inputSequence: stream)
 
-        lock.lock()
-        self.analyzer = analyzer
-        self.analyzerFormat = format
-        self.inputContinuation = continuation
-        lock.unlock()
+        lock.withLock {
+            self.analyzer = analyzer
+            self.analyzerFormat = format
+            self.inputContinuation = continuation
+        }
         Log.speech.info("Transcriber started for \(speaker.rawValue, privacy: .public)")
     }
 
@@ -111,13 +113,13 @@ final class LiveTranscriber: @unchecked Sendable {
 
     /// Flushes the last words and stops.
     func stop() async {
-        lock.lock()
-        let analyzer = self.analyzer
-        let continuation = inputContinuation
-        self.analyzer = nil
-        inputContinuation = nil
-        analyzerFormat = nil
-        lock.unlock()
+        let (analyzer, continuation) = lock.withLock {
+            let current = (self.analyzer, inputContinuation)
+            self.analyzer = nil
+            inputContinuation = nil
+            analyzerFormat = nil
+            return current
+        }
 
         continuation?.finish()
         if let analyzer {

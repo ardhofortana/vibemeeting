@@ -34,7 +34,7 @@ final class AppSettings {
         static let onboarded = "hasCompletedOnboarding"
     }
 
-    @ObservationIgnored private let defaults: UserDefaults
+    private let defaults: UserDefaults
 
     var replyModelID: String { didSet { defaults.set(replyModelID, forKey: Key.replyModel) } }
     var recapModelID: String { didSet { defaults.set(recapModelID, forKey: Key.recapModel) } }

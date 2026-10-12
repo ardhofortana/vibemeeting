@@ -8,9 +8,9 @@ import VibeCore
 @Observable
 final class AppModel {
     let settings = AppSettings()
-    @ObservationIgnored let store: SessionStore
-    @ObservationIgnored let transport = URLSessionTransport()
-    @ObservationIgnored let overlay = OverlayController()
+    let store: SessionStore
+    let transport = URLSessionTransport()
+    let overlay = OverlayController()
     @ObservationIgnored private(set) lazy var windows = WindowManager(app: self)
 
     private(set) var records: [MeetingRecord] = []

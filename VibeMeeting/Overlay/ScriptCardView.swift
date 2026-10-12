@@ -53,7 +53,7 @@ struct ScriptCardView: View {
                     Text("Drafting…").foregroundStyle(.secondary)
                 }
             } else {
-                Self.styled(ScriptText.sanitize(script.text))
+                Text(Self.styled(ScriptText.sanitize(script.text)))
                     .font(.title3)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -126,25 +126,28 @@ struct ScriptCardView: View {
     }
 
     /// First sentence in bold, [confirm number] markers highlighted.
-    static func styled(_ text: String) -> Text {
+    static func styled(_ text: String) -> AttributedString {
         let (first, rest) = ScriptText.splitFirstSentence(text)
         var result = highlighted(first, bold: true)
         if !rest.isEmpty {
-            result = result + Text(" ") + highlighted(rest, bold: false)
+            result += AttributedString(" ")
+            result += highlighted(rest, bold: false)
         }
         return result
     }
 
-    private static func highlighted(_ text: String, bold: Bool) -> Text {
-        let parts = text.components(separatedBy: ScriptText.confirmNumberMarker)
-        var result = Text("")
-        for (index, part) in parts.enumerated() {
+    private static func highlighted(_ text: String, bold: Bool) -> AttributedString {
+        var result = AttributedString()
+        for (index, part) in text.components(separatedBy: ScriptText.confirmNumberMarker).enumerated() {
             if index > 0 {
-                result = result + Text(ScriptText.confirmNumberMarker)
-                    .font(.callout.weight(.bold))
-                    .foregroundStyle(.orange)
+                var marker = AttributedString(ScriptText.confirmNumberMarker)
+                marker.foregroundColor = Color.orange
+                marker.inlinePresentationIntent = .stronglyEmphasized
+                result += marker
             }
-            result = result + Text(part).fontWeight(bold ? .semibold : .regular)
+            var run = AttributedString(part)
+            if bold { run.inlinePresentationIntent = .stronglyEmphasized }
+            result += run
         }
         return result
     }

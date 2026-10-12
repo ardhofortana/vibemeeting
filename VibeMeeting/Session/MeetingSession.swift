@@ -82,15 +82,15 @@ final class MeetingSession: Identifiable {
 
     // MARK: - Dependencies
 
-    @ObservationIgnored private let settings: AppSettings
-    @ObservationIgnored private let store: SessionStore
-    @ObservationIgnored private let transport: ClaudeTransport
-    @ObservationIgnored private let systemTap = SystemAudioTap()
-    @ObservationIgnored private let mic = MicrophoneCapture()
-    @ObservationIgnored private let themTranscriber = LiveTranscriber(speaker: .them)
-    @ObservationIgnored private let youTranscriber = LiveTranscriber(speaker: .you)
-    @ObservationIgnored private let themMeter = AudioLevelMeter()
-    @ObservationIgnored private let youMeter = AudioLevelMeter()
+    private let settings: AppSettings
+    private let store: SessionStore
+    private let transport: ClaudeTransport
+    private let systemTap = SystemAudioTap()
+    private let mic = MicrophoneCapture()
+    private let themTranscriber = LiveTranscriber(speaker: .them)
+    private let youTranscriber = LiveTranscriber(speaker: .you)
+    private let themMeter = AudioLevelMeter()
+    private let youMeter = AudioLevelMeter()
 
     @ObservationIgnored private var tickTask: Task<Void, Never>?
     @ObservationIgnored private var replyTask: Task<Void, Never>?
@@ -168,7 +168,7 @@ final class MeetingSession: Identifiable {
     private func startTranscriber(_ transcriber: LiveTranscriber) async throws {
         try await transcriber.start(
             onUpdate: { [weak self] update in
-                Task { @MainActor in self?.apply(update) }
+                self?.apply(update)
             },
             onError: { error in
                 Log.speech.error("Transcriber error: \(error.localizedDescription, privacy: .public)")
