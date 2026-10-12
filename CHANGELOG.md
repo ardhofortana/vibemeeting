@@ -10,11 +10,20 @@ Setiap versi punya tag git `vX.Y.Z`. Versi yang sedang jalan terlihat di menu ba
 
 ## Cara rollback
 
+Sekali saja setelah `git pull`, buat tag versinya di Mac-mu:
+
 ```
-git fetch --tags
+scripts/tag-versions.sh
+```
+
+Lalu pindah ke versi yang diinginkan:
+
+```
 git checkout v0.4.0          # ganti dengan versi yang diinginkan
 xcodegen generate            # lalu ⌘R di Xcode
 ```
+
+Tanpa tag juga bisa: `git checkout 06c13a0`, memakai commit yang tertulis di judul versi di bawah. Untuk versi rilis (0.5.0 ke atas), commit-nya adalah commit "Release X.Y.Z".
 
 Untuk kembali ke versi terbaru:
 
@@ -27,15 +36,19 @@ xcodegen generate
 Catatan:
 - Meeting yang tersimpan tidak pernah dihapus saat rollback. Kalau versi lama tidak bisa membaca meeting dari versi yang lebih baru, meeting itu hanya tidak tampil di History, lalu muncul lagi setelah update. Detail per versi ada di bagian **Kompatibilitas** di bawah.
 - Team signing (`Configs/Local.xcconfig`) tidak ikut berubah saat pindah versi, jadi izin audio tetap aman.
-- Tag v0.1.0 sampai v0.4.0 dibuat belakangan. Build dari tag-tag itu menampilkan versi 0.1.0 di app, karena nomor versi baru diisi sejak 0.5.0.
+- Versi 0.1.0 sampai 0.4.0 ditandai belakangan. Build dari versi-versi itu menampilkan 0.1.0 di app, karena nomor versi baru diisi sejak 0.5.0.
+- Supaya tag-nya juga ada di GitHub, jalankan `git push origin --tags` dari Mac-mu.
 
 ## Cara merilis versi baru
 
 1. Tulis perubahannya di bagian **[Unreleased]** di bawah.
 2. Jalankan `scripts/release.sh 0.6.0` (ganti dengan versi baru). Script ini memindahkan catatan Unreleased ke versi baru, mengisi nomor versi dan build di `project.yml`, lalu membuat commit dan tag.
-3. Push: `git push origin HEAD --follow-tags`.
+3. Push: `git push origin HEAD --follow-tags`. Kalau rilisnya dibuat di tempat lain, `scripts/tag-versions.sh` membuat tag yang belum ada.
 
 ## [Unreleased]
+
+### Ditambahkan
+- `scripts/tag-versions.sh`: membuat tag `vX.Y.Z` untuk semua versi di changelog, supaya rollback bisa pakai `git checkout vX.Y.Z`.
 
 ## [0.5.0] - 2026-10-12
 
@@ -53,7 +66,7 @@ Catatan:
 - Meeting lama tetap terbaca.
 - Rollback ke versi di bawah 0.5.0: meeting yang memakai Ask questions tidak tampil di History versi lama. File-nya tetap ada dan muncul lagi setelah update.
 
-## [0.4.0] - 2026-10-12
+## [0.4.0] - 2026-10-12 (commit 06c13a0)
 
 ### Ditambahkan
 - **Peredam suara bocor (EchoGate).** Saat memakai speaker, mic ikut mendengar lawan bicara sehingga teks "You" dobel. App membandingkan level mic dengan audio call, lalu membisukan mic khusus untuk transkrip "You" di bagian yang isinya hanya suara mereka. Call-nya tidak terpengaruh, dan kalau kamu bicara bersamaan suaramu tetap masuk. Aktif secara default dan bisa dimatikan di Settings → Audio → *Remove the call's voice from my mic*. Status peredam ada di Audio check dan di report.
@@ -61,7 +74,7 @@ Catatan:
 ### Diperbaiki
 - Setelah review: peredam lepas dengan cepat saat headphone dicolok atau volume speaker diturunkan, jeda antar suku kata saat bicara bersamaan tidak terpotong, noise latar di audio call tidak membuat peredam mati, dan kenaikan volume cepat dikenali.
 
-## [0.3.0] - 2026-10-12
+## [0.3.0] - 2026-10-12 (commit ce3ee33)
 
 ### Ditambahkan
 - **Reply membaca seluruh percakapan.** Script menjawab hal terakhir yang mereka katakan dulu, lalu menanggapi pertanyaan atau poin sebelumnya yang belum terjawab, dan tetap konsisten dengan yang sudah kamu ucapkan. Transkrip lama dikirim per potongan yang di-cache, jadi tetap cepat.
@@ -75,7 +88,7 @@ Catatan:
 - Rekap tidak lagi menimpa transkrip final kalau dibuat saat meeting masih disimpan.
 - Quit saat "Saving…" tidak lagi membuat meeting baru yang tertinggal.
 
-## [0.2.1] - 2026-10-12
+## [0.2.1] - 2026-10-12 (commit 45e1955)
 
 ### Diperbaiki
 - Peringatan izin palsu saat call sedang hening (muted, lobby). Diagnosis "hanya hening" sekarang hanya muncul kalau belum pernah ada suara sama sekali, dan izin dicek dengan probe seperti di Chromium.
@@ -85,7 +98,7 @@ Catatan:
 - Urutan End, Quit, dan New meeting tidak lagi kehilangan data.
 - Audio check yang dihentikan saat prompt izin tidak lagi jalan sendiri.
 
-## [0.2.0] - 2026-10-12
+## [0.2.0] - 2026-10-12 (commit 9e98127)
 
 ### Ditambahkan
 - **Audio check** (menu bar) dan tombol stetoskop di overlay: level, format, jumlah buffer, verdict per tahap, dan **Copy report** tanpa isi transkrip. Report meeting terakhir disimpan.
@@ -96,7 +109,7 @@ Catatan:
 - Suara sendiri ada level-nya tapi tidak ditranskripsi: audio mic dengan voice processing sekarang diambil dari channel 0.
 - Echo cancellation default mati, karena voice processing mengecilkan volume app lain termasuk suara call.
 
-## [0.1.0] - 2026-10-12
+## [0.1.0] - 2026-10-12 (commit 70513cd)
 
 ### Ditambahkan
 - Versi pertama: subtitle live untuk lawan bicara (system audio) dan kamu (mic), Reply dengan Claude (⌥Space) beserta intent, Steer, Regenerate, dan Shorter, konteks meeting (PDF/DOCX/teks/gambar), preset gaya, rekap setelah meeting dengan export Markdown, history lokal, dan Settings (API key di Keychain, model, hotkey, About me).
