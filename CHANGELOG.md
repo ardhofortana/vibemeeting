@@ -34,23 +34,25 @@ xcodegen generate
 ```
 
 Catatan:
-- Meeting yang tersimpan tidak pernah dihapus saat rollback. Kalau versi lama tidak bisa membaca meeting dari versi yang lebih baru, meeting itu hanya tidak tampil di History, lalu muncul lagi setelah update. Detail per versi ada di bagian **Kompatibilitas** di bawah.
-- Team signing (`Configs/Local.xcconfig`) tidak ikut berubah saat pindah versi, jadi izin audio tetap aman.
+- File meeting tidak pernah dihapus saat rollback. Kalau versi lama tidak bisa membaca meeting dari versi yang lebih baru, meeting itu hanya tidak tampil di History, lalu muncul lagi setelah update. Tapi kalau versi lama menyimpan ulang meeting yang lebih baru (misalnya rename atau membuat ulang rekap), data dari fitur yang belum dikenalnya ikut hilang. Detail per versi ada di bagian **Kompatibilitas** di bawah.
+- Mulai 0.2.0, Team signing (`Configs/Local.xcconfig`) tidak ikut berubah saat pindah versi, jadi izin audio tetap aman.
+- v0.1.0 belum membaca `Configs/Local.xcconfig`. Setelah `xcodegen generate`, pilih Team yang sama secara manual di target VibeMeeting → Signing & Capabilities sebelum ⌘R. Tanpa Team, build-nya ad-hoc dan audio sistem hanya hening. Kalau audio jadi hening setelah kembali ke versi terbaru, jalankan `tccutil reset AudioCapture com.ardhofortana.VibeMeeting` lalu beri izin lagi.
 - Versi 0.1.0 sampai 0.4.0 ditandai belakangan. Build dari versi-versi itu menampilkan 0.1.0 di app, karena nomor versi baru diisi sejak 0.5.0.
 - Supaya tag-nya juga ada di GitHub, jalankan `git push origin --tags` dari Mac-mu.
 
 ## Cara merilis versi baru
 
-1. Tulis perubahannya di bagian **[Unreleased]** di bawah.
+1. Tulis perubahannya di bagian **[Unreleased]** di bawah. Boleh belum di-commit; commit rilis ikut menyimpannya.
 2. Jalankan `scripts/release.sh 0.6.0` (ganti dengan versi baru). Script ini memindahkan catatan Unreleased ke versi baru, mengisi nomor versi dan build di `project.yml`, lalu membuat commit dan tag.
 3. Push: `git push origin HEAD --follow-tags`. Kalau rilisnya dibuat di tempat lain, `scripts/tag-versions.sh` membuat tag yang belum ada.
 
 ## [Unreleased]
 
 ### Ditambahkan
-- **Overlay split 50:50.** Transkrip di kiri, semua respon meeting (Reply dan Ask questions) di kanan, dari yang terlama sampai yang terbaru. Daftar respon tersimpan dan bisa di-scroll selama meeting, ikut turun saat ada respon baru, dan berhenti mengikuti kalau kamu scroll ke atas ("Jump to latest" untuk kembali). Respon terbaru disorot dan punya tombol Regenerate/Shorter; semua respon bisa di-Copy. Mode Compact (satu kolom sempit) tetap ada lewat tombol di header atau Settings → Overlay.
+- **Overlay split 50:50.** Transkrip di kiri, semua respon meeting (Reply dan Ask questions) di kanan, dari yang terlama sampai yang terbaru. Daftar respon tersimpan dan bisa di-scroll selama meeting, ikut turun saat ada respon baru, dan berhenti mengikuti kalau kamu scroll ke atas ("Jump to latest" untuk kembali). Respon yang baru kamu minta (Reply, Ask questions, Regenerate, Shorter) selalu langsung terlihat. Ukuran overlay yang kamu atur disimpan per meeting, dan overlay yang ditaruh di kiri layar tetap di kiri saat ganti mode. Respon terbaru disorot dan punya tombol Regenerate/Shorter; semua respon bisa di-Copy. Mode Compact (satu kolom sempit) tetap ada lewat tombol di header atau Settings → Overlay.
 - **App icon dan warna brand.** Logo VibeMeeting jadi app icon (semua ukuran macOS) dan ikon menu bar (bar gelombang; dalam lingkaran saat meeting berjalan). Warna dari logo (cyan, biru, ungu, magenta) dipakai sebagai aksen saja: tombol utama dan sorotan pakai biru brand, meter level dan garis tipis di atas overlay pakai gradasinya, ikon goal dan Ask questions pakai ungu. Warna status (hijau/oranye/merah) tetap seperti biasa.
 - `scripts/tag-versions.sh`: membuat tag `vX.Y.Z` untuk semua versi di changelog, supaya rollback bisa pakai `git checkout vX.Y.Z`.
+- `scripts/release.sh` menolak versi yang sudah ada atau lebih lama, dan menerima catatan Unreleased yang belum di-commit.
 
 ## [0.5.0] - 2026-10-12
 
@@ -67,6 +69,7 @@ Catatan:
 ### Kompatibilitas
 - Meeting lama tetap terbaca.
 - Rollback ke versi di bawah 0.5.0: meeting yang memakai Ask questions tidak tampil di History versi lama. File-nya tetap ada dan muncul lagi setelah update.
+- Rollback ke versi di bawah 0.5.0: meeting yang punya Goal tetap tampil, tapi tanpa goal dan progres goal. Jangan rename meeting itu atau buat ulang rekapnya di versi lama, karena file-nya akan disimpan ulang tanpa goal dan progres goal, dan keduanya tidak kembali setelah update.
 
 ## [0.4.0] - 2026-10-12 (commit 06c13a0)
 

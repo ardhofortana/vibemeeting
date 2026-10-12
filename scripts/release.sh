@@ -12,12 +12,17 @@ if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Usage: scripts/release.sh X.Y.Z (for example 0.6.0)"
   exit 1
 fi
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "Commit or stash your changes first."
+# The [Unreleased] notes may still be uncommitted; the release commit takes them.
+if ! git diff --quiet -- . ':(exclude)CHANGELOG.md' || ! git diff --cached --quiet -- . ':(exclude)CHANGELOG.md'; then
+  echo "Commit or stash your changes first (only CHANGELOG.md may be uncommitted)."
   exit 1
 fi
 if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
   echo "Tag v$version already exists."
+  exit 1
+fi
+if grep -qF "## [$version]" CHANGELOG.md; then
+  echo "$version is already in CHANGELOG.md."
   exit 1
 fi
 
@@ -28,6 +33,11 @@ if [ -z "$notes" ]; then
 fi
 
 previous=$(grep -m1 -E '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | sed -E 's/^## \[([^]]+)\].*/\1/')
+newest=$(printf '%s\n%s\n' "$previous" "$version" | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
+if [ "$newest" != "$version" ]; then
+  echo "$version is not newer than $previous."
+  exit 1
+fi
 build=$(( $(sed -nE 's/^ *CURRENT_PROJECT_VERSION: *([0-9]+).*/\1/p' project.yml) + 1 ))
 today=$(date +%Y-%m-%d)
 repo="https://github.com/ardhofortana/vibemeeting"

@@ -7,6 +7,9 @@ struct LiveScrollView<Content: View>: View {
     /// Changes whenever content near the bottom grows (a new item, more text).
     let liveKey: String
     var jumpLabel = "Jump to live"
+    /// Changes when the user asks for new content (a new response): always
+    /// scrolls to it and follows again, even if they had scrolled up.
+    var followKey = ""
     @ViewBuilder let content: () -> Content
     @State private var pinnedToBottom = true
 
@@ -39,6 +42,10 @@ struct LiveScrollView<Content: View>: View {
             .onChange(of: liveKey) {
                 guard pinnedToBottom else { return }
                 // After this update is laid out, so the new content is measured.
+                Task { @MainActor in proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+            }
+            .onChange(of: followKey) {
+                pinnedToBottom = true
                 Task { @MainActor in proxy.scrollTo(Self.bottomID, anchor: .bottom) }
             }
             .onAppear { proxy.scrollTo(Self.bottomID, anchor: .bottom) }

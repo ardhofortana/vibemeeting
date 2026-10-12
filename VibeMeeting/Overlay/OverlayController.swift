@@ -27,23 +27,37 @@ final class OverlayController {
         let panel = self.panel ?? makePanel(session: session, app: app)
         self.panel = panel
         apply(settings: app.settings, to: panel)
-        // A frame saved by an older, narrower overlay is widened for the split.
-        if isNew { applyLayout(compact: app.settings.compactOverlay) }
+        // Fix a restored frame only when it was saved by the other layout (or the
+        // older 420-wide build); otherwise keep the size the user chose.
+        if isNew { applyLayout(compact: app.settings.compactOverlay, restoring: true) }
         panel.orderFrontRegardless()
     }
 
-    /// Resizes the panel for the layout, keeping its top-right corner in place
-    /// and the whole panel on screen.
-    func applyLayout(compact: Bool) {
+    /// Sizes the panel for the layout, keeping its top edge and the side edge
+    /// nearer the screen edge (so a left-placed panel stays left), and the whole
+    /// panel on screen. `restoring`: a frame just restored for a new meeting,
+    /// whose width is kept unless it belongs to the other layout.
+    func applyLayout(compact: Bool, restoring: Bool = false) {
         guard let panel else { return }
         let minSize = compact ? Self.compactMinSize : Self.splitMinSize
         panel.contentMinSize = minSize
         var frame = panel.frame
-        let width = compact ? Self.compactSize.width : max(frame.width, Self.splitSize.width)
+        let width: CGFloat
+        if compact {
+            width = restoring && frame.width < Self.splitMinSize.width
+                ? max(frame.width, minSize.width)
+                : Self.compactSize.width
+        } else {
+            width = restoring && frame.width >= Self.splitMinSize.width
+                ? frame.width
+                : max(frame.width, Self.splitSize.width)
+        }
         let height = max(frame.height, minSize.height)
         guard width != frame.width || height != frame.height else { return }
-        frame = CGRect(x: frame.maxX - width, y: frame.maxY - height, width: width, height: height)
-        if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame {
+        let visible = (panel.screen ?? NSScreen.main)?.visibleFrame
+        let keepLeft = visible.map { frame.midX < $0.midX } ?? false
+        frame = CGRect(x: keepLeft ? frame.minX : frame.maxX - width, y: frame.maxY - height, width: width, height: height)
+        if let visible {
             frame.size.width = min(frame.width, visible.width)
             frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
             frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)

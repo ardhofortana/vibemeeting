@@ -27,7 +27,12 @@ struct ResponseListView: View {
                 .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                LiveScrollView(liveKey: Self.liveKey(responses, state: session.replyState), jumpLabel: "Jump to latest") {
+                LiveScrollView(
+                    liveKey: Self.liveKey(responses, state: session.replyState),
+                    jumpLabel: "Jump to latest",
+                    // A new Reply, Ask questions, Regenerate or Shorter: show it.
+                    followKey: session.currentScript?.id.uuidString ?? ""
+                ) {
                     ForEach(responses) { script in
                         ResponseCard(script: script, isLatest: script.id == latestID)
                             .responseCard(highlighted: script.id == latestID)
@@ -42,11 +47,9 @@ struct ResponseListView: View {
     }
 
     /// Saved responses plus the one still streaming (it's saved when it finishes).
-    /// A request that failed before any words is left out; the failure row says so.
+    /// A failed request isn't saved, so it shows only as the failure row.
     static func responses(saved: [ReplyScript], current: ReplyScript?, inFlight: Bool) -> [ReplyScript] {
-        guard let current, !saved.contains(where: { $0.id == current.id }),
-              inFlight || !current.text.isEmpty
-        else { return saved }
+        guard inFlight, let current, !saved.contains(where: { $0.id == current.id }) else { return saved }
         return saved + [current]
     }
 
