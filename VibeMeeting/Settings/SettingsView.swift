@@ -67,6 +67,14 @@ private struct GeneralSettings: View {
                     .foregroundStyle(.secondary)
                 ModelPicker(title: "Recap", selection: $settings.recapModelID)
             }
+
+            Section {
+                LabeledContent("Version", value: AppVersion.display)
+            } footer: {
+                Text("What changed in each version, and how to go back to an earlier one: CHANGELOG.md in the project folder.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }

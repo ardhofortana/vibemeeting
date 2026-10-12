@@ -141,6 +141,10 @@ Cache dipanaskan dengan request `max_tokens: 0` saat **Start listening** dan dij
 - **Pre-draft** (eksperimen opsional M3) belum dibuat.
 - **Distribusi** (Developer ID + notarization) belum di-setup. Untuk pemakaian pribadi, Run dari Xcode sudah cukup, asalkan Team sudah dipilih dan disimpan (lihat Build & jalankan).
 
+## Versi & rollback
+
+Versi yang sedang jalan tampil di menu bar dan di Settings → General. Semua perubahan per versi, cara kembali ke versi sebelumnya (`git checkout vX.Y.Z`), dan cara merilis versi baru (`scripts/release.sh`) ada di [CHANGELOG.md](CHANGELOG.md).
+
 ## Pengembangan
 
 ```bash

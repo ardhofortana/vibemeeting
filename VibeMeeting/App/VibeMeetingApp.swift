@@ -81,6 +81,7 @@ private struct MenuContent: View {
         Button("Settings…") { app.windows.showSettings() }
             .keyboardShortcut(",")
         Divider()
+        Text("VibeMeeting \(AppVersion.display)")
         Button("Quit") { NSApp.terminate(nil) }
             .keyboardShortcut("q")
     }
