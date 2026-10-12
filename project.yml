@@ -40,8 +40,8 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_HARDENED_RUNTIME: YES
         # Set by scripts/release.sh; see CHANGELOG.md.
-        MARKETING_VERSION: 0.5.0
-        CURRENT_PROJECT_VERSION: 6
+        MARKETING_VERSION: 0.6.0
+        CURRENT_PROJECT_VERSION: 7
     preBuildScripts:
       - name: Check signing Team
         basedOnDependencyAnalysis: false

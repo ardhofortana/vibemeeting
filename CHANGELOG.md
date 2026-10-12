@@ -48,6 +48,8 @@ Catatan:
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-12
+
 ### Ditambahkan
 - **Overlay split 50:50.** Transkrip di kiri, semua respon meeting (Reply dan Ask questions) di kanan, dari yang terlama sampai yang terbaru. Daftar respon tersimpan dan bisa di-scroll selama meeting, ikut turun saat ada respon baru, dan berhenti mengikuti kalau kamu scroll ke atas ("Jump to latest" untuk kembali). Respon yang baru kamu minta (Reply, Ask questions, Regenerate, Shorter) selalu langsung terlihat. Ukuran overlay yang kamu atur disimpan per meeting, dan overlay yang ditaruh di kiri layar tetap di kiri saat ganti mode. Respon terbaru disorot dan punya tombol Regenerate/Shorter; semua respon bisa di-Copy. Mode Compact (satu kolom sempit) tetap ada lewat tombol di header atau Settings → Overlay.
 - **App icon dan warna brand.** Logo VibeMeeting jadi app icon (semua ukuran macOS) dan ikon menu bar (bar gelombang; dalam lingkaran saat meeting berjalan). Warna dari logo (cyan, biru, ungu, magenta) dipakai sebagai aksen saja: tombol utama dan sorotan pakai biru brand, meter level dan garis tipis di atas overlay pakai gradasinya, ikon goal dan Ask questions pakai ungu. Warna status (hijau/oranye/merah) tetap seperti biasa.
@@ -119,7 +121,8 @@ Catatan:
 ### Ditambahkan
 - Versi pertama: subtitle live untuk lawan bicara (system audio) dan kamu (mic), Reply dengan Claude (⌥Space) beserta intent, Steer, Regenerate, dan Shorter, konteks meeting (PDF/DOCX/teks/gambar), preset gaya, rekap setelah meeting dengan export Markdown, history lokal, dan Settings (API key di Keychain, model, hotkey, About me).
 
-[Unreleased]: https://github.com/ardhofortana/vibemeeting/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ardhofortana/vibemeeting/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ardhofortana/vibemeeting/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ardhofortana/vibemeeting/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ardhofortana/vibemeeting/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ardhofortana/vibemeeting/compare/v0.2.1...v0.3.0
