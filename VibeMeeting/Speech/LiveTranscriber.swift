@@ -11,12 +11,14 @@ final class LiveTranscriber: @unchecked Sendable {
         case unsupportedLocale(String)
         case assetsNotReady
         case noAudioFormat
+        case endedUnexpectedly
 
         var errorDescription: String? {
             switch self {
             case .unsupportedLocale(let id): return "Speech recognition for \(id) isn't available on this Mac."
             case .assetsNotReady: return "The speech model is still downloading. Try again in a minute."
             case .noAudioFormat: return "Speech recognition couldn't pick an audio format."
+            case .endedUnexpectedly: return "Speech recognition stopped on its own."
             }
         }
     }
@@ -36,7 +38,13 @@ final class LiveTranscriber: @unchecked Sendable {
     private var analyzerFormat: AVAudioFormat?
     private var accumulator: ChunkAccumulator?
     private var resultsTask: Task<Void, Never>?
+    /// Bumped by every start and stop (under `lock`). A start that finds it changed
+    /// after its awaits was stopped meanwhile and must not install its analyzer.
+    private var generation = 0
     private let converter = BufferConverter()
+
+    /// RMS of a 100 ms chunk that counts as speech level (about -40 dBFS).
+    static let speechLevelRMS: Float = 0.01
 
     init(speaker: Speaker, diagnostics: StreamDiagnostics) {
         self.speaker = speaker
@@ -103,10 +111,15 @@ final class LiveTranscriber: @unchecked Sendable {
     }
 
     func start(onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler) async throws {
-        guard lock.withLock({ analyzer == nil }) else { return }
+        let token: Int? = lock.withLock {
+            guard analyzer == nil else { return nil }
+            generation += 1
+            return generation
+        }
+        guard let token else { return }
         diagnostics.update { $0.transcriberState = "Checking speech model" }
         do {
-            try await startAnalyzer(onUpdate: onUpdate, onError: onError)
+            try await startAnalyzer(token: token, onUpdate: onUpdate, onError: onError)
         } catch {
             diagnostics.update {
                 $0.transcriberState = "Failed to start"
@@ -116,7 +129,7 @@ final class LiveTranscriber: @unchecked Sendable {
         }
     }
 
-    private func startAnalyzer(onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler) async throws {
+    private func startAnalyzer(token: Int, onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler) async throws {
         let diagnostics = self.diagnostics
         let (transcriber, locale) = try await Self.makeTranscriber()
         diagnostics.update { $0.transcriberState = "Preparing speech model" }
@@ -138,7 +151,7 @@ final class LiveTranscriber: @unchecked Sendable {
         let speaker = self.speaker
 
         // Consume results before starting, as Apple's sample does, so nothing (not even an error) is missed.
-        let resultsTask = Task {
+        let resultsTask = Task { [weak self] in
             do {
                 for try await result in transcriber.results {
                     diagnostics.update {
@@ -147,6 +160,16 @@ final class LiveTranscriber: @unchecked Sendable {
                     }
                     // Awaiting keeps volatile and final results in order.
                     await onUpdate(TranscriptUpdate(speaker: speaker, kind: result.isFinal ? .final : .volatile, text: String(result.text.characters)))
+                }
+                // A normal end is expected only after stop(), which bumps the generation.
+                let stillRunning = self?.lock.withLock { self?.generation == token } ?? false
+                if stillRunning, !Task.isCancelled {
+                    Log.speech.error("Transcriber \(speaker.rawValue, privacy: .public) results ended on their own")
+                    diagnostics.update {
+                        $0.transcriberState = "Ended unexpectedly"
+                        $0.lastError = Failure.endedUnexpectedly.errorDescription
+                    }
+                    await onError(Failure.endedUnexpectedly)
                 }
             } catch is CancellationError {
             } catch {
@@ -170,12 +193,22 @@ final class LiveTranscriber: @unchecked Sendable {
             throw error
         }
 
-        lock.withLock {
+        let installed: Bool = lock.withLock {
+            // stop() ran while this start was suspended: don't leak a running analyzer.
+            guard generation == token else { return false }
             self.analyzer = analyzer
             self.analyzerFormat = format
             self.accumulator = ChunkAccumulator(format: format)
             self.continuation = continuation
             self.resultsTask = resultsTask
+            return true
+        }
+        guard installed else {
+            continuation.finish()
+            resultsTask.cancel()
+            await analyzer.cancelAndFinishNow()
+            diagnostics.update { $0.transcriberState = "Stopped" }
+            return
         }
         diagnostics.update { $0.transcriberState = "Running (\(locale.identifier(.bcp47)))" }
         Log.speech.info("Transcriber \(speaker.rawValue, privacy: .public) started, \(StreamDiagnostics.describe(format), privacy: .public)")
@@ -208,6 +241,7 @@ final class LiveTranscriber: @unchecked Sendable {
                     $0.framesToAnalyzer += Int(chunk.frameLength)
                     if rms > $0.analyzerPeakRMS { $0.analyzerPeakRMS = rms }
                     if rms > AudioLevelMeter.silenceRMS { $0.lastAudibleToAnalyzerAt = Date() }
+                    if rms > Self.speechLevelRMS { $0.speechLevelChunks += 1 }
                     if dropped { $0.droppedChunks += 1 }
                 }
             }
@@ -231,6 +265,7 @@ final class LiveTranscriber: @unchecked Sendable {
         let (analyzer, continuation, resultsTask, tail) = lock.withLock {
             () -> (SpeechAnalyzer?, AsyncStream<AnalyzerInput>.Continuation?, Task<Void, Never>?, AVAudioPCMBuffer?) in
             let current = (self.analyzer, self.continuation, self.resultsTask, self.accumulator?.flush())
+            self.generation += 1
             self.analyzer = nil
             self.continuation = nil
             self.analyzerFormat = nil
@@ -244,26 +279,24 @@ final class LiveTranscriber: @unchecked Sendable {
 
         if let analyzer {
             // finalizeAndFinishThroughEndOfInput keeps the last words; cancelAndFinishNow
-            // drops pending finals, so it's only the fallback.
-            let watchdog = Task {
-                try await Task.sleep(for: .seconds(3))
-                await analyzer.cancelAndFinishNow()
+            // drops pending finals, so it's only the fallback. Both are bounded, so
+            // ending a meeting can't hang on the speech service.
+            let finished = await firstResult(within: 3) { () -> Bool in
+                do {
+                    try await analyzer.finalizeAndFinishThroughEndOfInput()
+                    return true
+                } catch {
+                    return false
+                }
             }
-            do {
-                try await analyzer.finalizeAndFinishThroughEndOfInput()
-            } catch {
-                await analyzer.cancelAndFinishNow()
+            if finished != true {
+                _ = await firstResult(within: 1) { await analyzer.cancelAndFinishNow() }
             }
-            watchdog.cancel()
         }
-        // The results sequence ends once the analyzer has finished; let the last finals land.
+        // The results sequence ends once the analyzer has finished; let the last
+        // finals land, but never wait more than 2 s for them.
         if let resultsTask {
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await resultsTask.value }
-                group.addTask { try? await Task.sleep(for: .seconds(2)) }
-                await group.next()
-                group.cancelAll()
-            }
+            _ = await firstResult(within: 2) { await resultsTask.value }
             resultsTask.cancel()
         }
         diagnostics.update { $0.transcriberState = "Stopped" }

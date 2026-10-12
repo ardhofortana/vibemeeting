@@ -72,7 +72,9 @@ final class AppSettings {
         hideFromScreenSharing = defaults.object(forKey: Key.hideFromSharing) as? Bool ?? true
         compactOverlay = defaults.bool(forKey: Key.compactOverlay)
         audioSourceBundleID = defaults.string(forKey: Key.audioSourceBundleID)
-        voiceProcessing = defaults.object(forKey: Key.voiceProcessing) as? Bool ?? true
+        // Off by default: macOS voice processing ducks every other app (the call too)
+        // and can lower the call app's own mic input. Turned on, it only runs on speakers.
+        voiceProcessing = defaults.object(forKey: Key.voiceProcessing) as? Bool ?? false
         hasCompletedOnboarding = defaults.bool(forKey: Key.onboarded)
         hasAPIKey = !(KeychainStore.read(account: KeychainStore.apiKeyAccount) ?? "").isEmpty
     }

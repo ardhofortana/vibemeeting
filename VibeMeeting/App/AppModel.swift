@@ -18,6 +18,9 @@ final class AppModel {
     private(set) var records: [MeetingRecord] = []
     private(set) var activeSession: MeetingSession?
     private(set) var recapsInProgress: Set<UUID> = []
+    /// Diagnostics from the last meeting (formats, counters, errors; no transcript text),
+    /// so the report can still be copied after the call ends.
+    private(set) var lastMeetingReport: String?
     var selectedRecordID: UUID?
 
     init() {
@@ -81,12 +84,32 @@ final class AppModel {
         Hotkeys.setEnabled(false)
         overlay.close()
         await session.end()
+        if let report = session.diagnosticsReport {
+            lastMeetingReport = report
+            Self.saveDiagnostics(report)
+        }
         upsert(session.record)
         activeSession = nil
         selectedRecordID = session.id
         guard thenRecap else { return }
         windows.showMain()
         await generateRecap(for: session.id)
+    }
+
+    /// ~/Library/Application Support/VibeMeeting/Diagnostics/last-meeting.txt
+    static var diagnosticsFile: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("VibeMeeting/Diagnostics/last-meeting.txt")
+    }
+
+    private static func saveDiagnostics(_ report: String) {
+        guard let file = diagnosticsFile else { return }
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try report.write(to: file, atomically: true, encoding: .utf8)
+        } catch {
+            Log.app.error("Saving diagnostics failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func toggleOverlay() {

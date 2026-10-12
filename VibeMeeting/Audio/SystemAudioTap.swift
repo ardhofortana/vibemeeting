@@ -28,6 +28,8 @@ final class SystemAudioTap: @unchecked Sendable {
         case unreadableBuffers
         /// The aggregate device stopped calling the IO block while other apps play.
         case noAudioIO
+        /// The device or format kept changing, so rebuilding was paused.
+        case deviceKeepsChanging
     }
 
     typealias BufferHandler = @Sendable (AVAudioPCMBuffer) -> Void
@@ -58,6 +60,26 @@ final class SystemAudioTap: @unchecked Sendable {
     private var recoveryRebuilds = 0
     private var silentRebuilds = 0
     private var reportedProblem: Problem?
+    /// Tap-only first. If that aggregate never runs IO on this Mac while audio
+    /// plays, fall back once to an output device as the aggregate's clock. Only a
+    /// device with no input streams qualifies: a device with a mic would put its
+    /// mic stream in the IO buffer list next to the tap's, in the same shape.
+    private var composition: Composition = .tapOnly
+    private var publishedUnreadable = 0
+    /// Start times of recent rebuilds, to stop a flapping device from rebuilding forever.
+    private var rebuildTimes: [TimeInterval] = []
+
+    private enum Composition: Equatable {
+        case tapOnly
+        case withClock(uid: String, name: String)
+
+        var label: String {
+            switch self {
+            case .tapOnly: return "tap only"
+            case .withClock(_, let name): return "tap + \(name) as clock"
+            }
+        }
+    }
 
     /// Called on the main queue after the tap was rebuilt (or failed to rebuild).
     var onReconnect: ((Result<Void, Error>) -> Void)?
@@ -71,31 +93,60 @@ final class SystemAudioTap: @unchecked Sendable {
         self.diagnostics = diagnostics
     }
 
-    /// Call off the main thread when you can: while the System Audio Recording
-    /// prompt is unanswered, creating/starting the aggregate device blocks until
-    /// the user answers it.
-    func start(source: Source, handler: @escaping BufferHandler) throws {
-        try controlQueue.sync {
-            self.source = source
-            self.handler = handler
-            failedRebuilds = 0
-            recoveryRebuilds = 0
-            silentRebuilds = 0
-            reportedProblem = nil
-            try startTap()
-            startWatchdog()
+    /// Starts capture. Runs on the control queue and suspends the caller instead of
+    /// blocking a thread: while the System Audio Recording prompt is unanswered,
+    /// creating the aggregate device can block for a long time.
+    func start(source: Source, handler: @escaping BufferHandler) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            controlQueue.async {
+                do {
+                    try self.startOnControlQueue(source: source, handler: handler)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 
-    func stop() {
-        controlQueue.sync {
-            handler = nil
-            pendingRebuild?.cancel()
-            pendingRebuild = nil
-            watchdog?.cancel()
-            watchdog = nil
-            stopTap()
+    /// Stops capture and destroys the tap and aggregate device.
+    func stop() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            controlQueue.async {
+                self.stopOnControlQueue()
+                continuation.resume()
+            }
         }
+    }
+
+    private func startOnControlQueue(source: Source, handler: @escaping BufferHandler) throws {
+        // Idempotent: a second start replaces the first instead of leaking it.
+        if self.handler != nil { stopOnControlQueue() }
+        self.source = source
+        self.handler = handler
+        failedRebuilds = 0
+        recoveryRebuilds = 0
+        silentRebuilds = 0
+        reportedProblem = nil
+        rebuildTimes = []
+        composition = .tapOnly
+        diagnostics?.update { $0.problem = nil }
+        do {
+            try startTap()
+        } catch {
+            self.handler = nil
+            throw error
+        }
+        startWatchdog()
+    }
+
+    private func stopOnControlQueue() {
+        handler = nil
+        pendingRebuild?.cancel()
+        pendingRebuild = nil
+        watchdog?.cancel()
+        watchdog = nil
+        stopTap()
     }
 
     // MARK: - Tap lifecycle (controlQueue)
@@ -114,21 +165,25 @@ final class SystemAudioTap: @unchecked Sendable {
 
         do {
             let tapUID = description.uuid.uuidString
-            let composition: [String: Any] = [
+            var composition: [String: Any] = [
                 kAudioAggregateDeviceNameKey: "VibeMeeting Tap",
                 kAudioAggregateDeviceUIDKey: UUID().uuidString,
                 kAudioAggregateDeviceIsPrivateKey: true,
                 // IO runs even while nothing plays, so a missing heartbeat means a dead
                 // tap, not a quiet call.
                 kAudioAggregateDeviceTapAutoStartKey: false,
-                // Deliberately no kAudioAggregateDeviceSubDeviceListKey and no
-                // kAudioAggregateDeviceMainSubDeviceKey: the IO buffer list then holds
-                // the tap stream and nothing else.
                 kAudioAggregateDeviceTapListKey: [[
                     kAudioSubTapUIDKey: tapUID,
                     kAudioSubTapDriftCompensationKey: true,
                 ]],
             ]
+            // Tap only (default): no sub-device, so the IO buffer list holds the tap
+            // stream and nothing else. The fallback clock never has input streams.
+            if case .withClock(let clockUID, _) = self.composition {
+                composition[kAudioAggregateDeviceMainSubDeviceKey] = clockUID
+                composition[kAudioAggregateDeviceIsStackedKey] = false
+                composition[kAudioAggregateDeviceSubDeviceListKey] = [[kAudioSubDeviceUIDKey: clockUID]]
+            }
 
             var newAggregate = AudioObjectID.unknown
             try check(AudioHardwareCreateAggregateDevice(composition as CFDictionary, &newAggregate), "Creating aggregate device")
@@ -136,26 +191,29 @@ final class SystemAudioTap: @unchecked Sendable {
 
             let stream = try TapStream(tapID: tapID, aggregateID: aggregateID)
             self.stream = stream
+            publishedUnreadable = 0
+            let detail = "\(stream.summary); aggregate: \(self.composition.label); "
+                + "source: \(source == .allSystemAudio || fellBackToAllAudio ? "all system audio" : "one app"); "
+                + "permission preflight: \(SystemAudioPermission.status.rawValue)"
             diagnostics?.update {
-                $0.sourceFormat = stream.summary
+                $0.deviceDetail = detail
                 $0.captureState = "Starting"
             }
 
+            // The IO block only copies and hands on; the handler must not do heavy work
+            // here (CapturePipeline moves conversion to its own queue).
             let handler = self.handler
-            let diagnostics = self.diagnostics
             try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) { _, inputData, _, _, _ in
                 // Copies the tap's samples out; the IO buffer list dies with this cycle.
-                guard let buffer = stream.read(inputData) else {
-                    diagnostics?.update { $0.unreadableBuffers += 1 }
-                    return
-                }
+                // Unreadable cycles are counted inside TapStream (no lock traffic here).
+                guard let buffer = stream.read(inputData) else { return }
                 handler?(buffer)
             }, "Creating IO proc")
 
             try check(AudioDeviceStart(aggregateID, procID), "Starting aggregate device")
             installListeners()
             diagnostics?.update { $0.captureState = "Running" }
-            Log.audio.info("System audio tap started: \(stream.summary, privacy: .public)")
+            Log.audio.info("System audio tap started: \(detail, privacy: .public)")
         } catch {
             stopTap()
             throw error
@@ -285,7 +343,20 @@ final class SystemAudioTap: @unchecked Sendable {
     private func rebuild(_ reason: String) {
         pendingRebuild = nil
         guard handler != nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        rebuildTimes = rebuildTimes.filter { now - $0 < 60 } + [now]
+        if rebuildTimes.count > 6 {
+            // Something keeps changing (a flapping device or format). Stop rebuilding
+            // and say so rather than tearing down the tap forever.
+            Log.audio.error("Too many tap rebuilds; pausing: \(reason, privacy: .public)")
+            report(.deviceKeepsChanging)
+            return
+        }
         Log.audio.info("Rebuilding system audio tap: \(reason, privacy: .public)")
+        diagnostics?.update {
+            $0.rebuilds += 1
+            $0.lastRebuildReason = reason
+        }
         stopTap()
         let result: Result<Void, Error>
         do {
@@ -321,12 +392,32 @@ final class SystemAudioTap: @unchecked Sendable {
     private func checkHealth() {
         guard handler != nil, pendingRebuild == nil, let stream else { return }
         let health = stream.health()
+        publish(health, of: stream)
         guard health.age > 3 else { return }
+
+        // No IO cycle at all while a tapped process plays means this aggregate layout
+        // doesn't run on this Mac: try an output device as the clock, once. (Judged
+        // only while something plays, so a quiet start never switches layouts.)
+        if health.cycles == 0 {
+            guard tappedProcessesPlaying() else { return }
+            if composition == .tapOnly, let clock = Self.inputlessOutputDevice() {
+                composition = .withClock(uid: clock.uid, name: clock.name)
+                Log.audio.error("Tap-only aggregate ran no IO; retrying with \(clock.name, privacy: .public) as clock")
+                scheduleRebuild("no IO from the tap-only aggregate")
+            } else {
+                report(.noAudioIO)
+                recover("no IO from the aggregate")
+            }
+            return
+        }
 
         if health.secondsSinceSignal < 1 {
             recoveryRebuilds = 0
             silentRebuilds = 0
-            reportedProblem = nil
+            if reportedProblem != nil {
+                reportedProblem = nil
+                diagnostics?.update { $0.problem = nil }
+            }
             return
         }
 
@@ -336,9 +427,9 @@ final class SystemAudioTap: @unchecked Sendable {
             return
         }
 
-        // Only judge silence while another process is actually playing. A muted or
+        // Only judge silence while a tapped process is actually playing. A muted or
         // quiet call still reports output, so the window is generous.
-        guard AudioProcessCatalog.anyOtherProcessPlaying() else { return }
+        guard tappedProcessesPlaying() else { return }
         if health.secondsSinceCycle > 3 {
             report(.noAudioIO)
             recover("IO stalled")
@@ -362,7 +453,57 @@ final class SystemAudioTap: @unchecked Sendable {
     private func report(_ problem: Problem) {
         guard reportedProblem != problem else { return }
         reportedProblem = problem
+        diagnostics?.update { $0.problem = "\(problem)" }
         DispatchQueue.main.async { [weak self] in self?.onProblem?(problem) }
+    }
+
+    /// An output device with no input streams, to clock the fallback aggregate.
+    /// Prefers the default output, then built-in speakers, then any other.
+    private static func inputlessOutputDevice() -> (uid: String, name: String)? {
+        let system = AudioObjectID.systemObject
+        let defaultOutput = (try? system.read(kAudioHardwarePropertyDefaultOutputDevice, initial: AudioObjectID.unknown)) ?? .unknown
+        let devices = (try? system.readObjectList(kAudioHardwarePropertyDevices)) ?? []
+        func streams(_ device: AudioObjectID, _ scope: AudioObjectPropertyScope) -> Int {
+            ((try? device.readObjects(kAudioDevicePropertyStreams, scope: scope)) ?? []).count
+        }
+        let candidates = devices.filter { streams($0, kAudioObjectPropertyScopeOutput) > 0 && streams($0, kAudioObjectPropertyScopeInput) == 0 }
+        let builtIn = candidates.first {
+            ((try? $0.read(kAudioDevicePropertyTransportType, initial: UInt32(0))) ?? 0) == kAudioDeviceTransportTypeBuiltIn
+        }
+        guard let device = candidates.first(where: { $0 == defaultOutput }) ?? builtIn ?? candidates.first,
+              let uid = try? device.readString(kAudioDevicePropertyDeviceUID)
+        else { return nil }
+        let name = (try? device.readString(kAudioObjectPropertyName)) ?? uid
+        return (uid, name)
+    }
+
+    /// With one app chosen, only that app's processes count; otherwise any process
+    /// but VibeMeeting. (Unrelated music must not make a quiet app look broken.)
+    private func tappedProcessesPlaying() -> Bool {
+        if case .app = source, !tappedProcesses.isEmpty {
+            return tappedProcesses.contains { process in
+                ((try? process.read(kAudioProcessPropertyIsRunningOutput, initial: UInt32(0))) ?? 0) != 0
+            }
+        }
+        return AudioProcessCatalog.anyOtherProcessPlaying()
+    }
+
+    /// Copies the IO-side counters into the diagnostics (1 Hz, control queue), so
+    /// the IO block never takes the diagnostics lock.
+    private func publish(_ health: TapStream.Health, of stream: TapStream) {
+        let newUnreadable = health.unreadableTotal - publishedUnreadable
+        publishedUnreadable = health.unreadableTotal
+        let layout = health.badLayout.map { stream.describe($0) }
+        diagnostics?.update {
+            $0.unreadableBuffers += newUnreadable
+            if let layout { $0.unreadableLayout = layout }
+            // nil = no non-zero sample yet from this tap.
+            $0.tracksNonZero = true
+            $0.secondsSinceNonZero = health.everSignal ? health.secondsSinceSignal : nil
+            if $0.captureState.hasPrefix("Running") {
+                $0.captureState = "Running (\(health.cycles) IO cycles since last start)"
+            }
+        }
     }
 }
 
@@ -373,9 +514,24 @@ final class SystemAudioTap: @unchecked Sendable {
 private final class TapStream: @unchecked Sendable {
     struct Health {
         var age: TimeInterval
+        var cycles: Int
+        var unreadableTotal: Int
         var consecutiveUnreadable: Int
         var secondsSinceCycle: TimeInterval
         var secondsSinceSignal: TimeInterval
+        /// False until the first non-zero sample of this tap.
+        var everSignal: Bool
+        var badLayout: BufferLayout?
+    }
+
+    /// The shape of one IO buffer list. Plain integers: captured on the IO thread
+    /// without allocating, formatted later on the control queue.
+    struct BufferLayout {
+        var buffers: Int
+        var firstChannels: UInt32
+        var firstBytes: UInt32
+        var lastChannels: UInt32
+        var lastBytes: UInt32
     }
 
     /// What the tap reports (kAudioTapPropertyFormat).
@@ -391,7 +547,11 @@ private final class TapStream: @unchecked Sendable {
 
     private let lock = NSLock()
     private let startedAt: TimeInterval
+    private var cycles = 0
+    private var unreadableTotal = 0
     private var consecutiveUnreadable = 0
+    private var badLayout: BufferLayout?
+    private var everSignal = false
     private var lastCycleAt: TimeInterval
     private var lastSignalAt: TimeInterval
 
@@ -476,14 +636,32 @@ private final class TapStream: @unchecked Sendable {
             }
         }
 
+        var layout: BufferLayout?
+        if copy == nil {
+            let count = list.count
+            layout = BufferLayout(
+                buffers: count,
+                firstChannels: count > 0 ? list[0].mNumberChannels : 0,
+                firstBytes: count > 0 ? list[0].mDataByteSize : 0,
+                lastChannels: count > 0 ? list[count - 1].mNumberChannels : 0,
+                lastBytes: count > 0 ? list[count - 1].mDataByteSize : 0
+            )
+        }
+
         lock.withLock {
+            cycles += 1
             lastCycleAt = now
             if copy == nil {
                 consecutiveUnreadable += 1
+                unreadableTotal += 1
+                badLayout = layout
             } else {
                 consecutiveUnreadable = 0
                 // Non-float formats can't be checked cheaply; treat them as live.
-                if hasSignal || !isFloat32 { lastSignalAt = now }
+                if hasSignal || !isFloat32 {
+                    lastSignalAt = now
+                    everSignal = true
+                }
             }
         }
         return copy
@@ -494,11 +672,22 @@ private final class TapStream: @unchecked Sendable {
         return lock.withLock {
             Health(
                 age: now - startedAt,
+                cycles: cycles,
+                unreadableTotal: unreadableTotal,
                 consecutiveUnreadable: consecutiveUnreadable,
                 secondsSinceCycle: now - lastCycleAt,
-                secondsSinceSignal: now - lastSignalAt
+                secondsSinceSignal: now - lastSignalAt,
+                everSignal: everSignal,
+                badLayout: badLayout
             )
         }
+    }
+
+    /// "3 buffers (first 1ch/2048B, last 1ch/2048B); expected 1 × 1ch, 4 B/frame".
+    func describe(_ layout: BufferLayout) -> String {
+        "\(layout.buffers) buffers (first \(layout.firstChannels)ch/\(layout.firstBytes)B, "
+            + "last \(layout.lastChannels)ch/\(layout.lastBytes)B); "
+            + "expected \(buffersPerCycle) × \(channelsPerBuffer)ch, \(bytesPerFrame) B/frame"
     }
 
     /// With a tap-only aggregate the list holds exactly the tap's buffers. Should a

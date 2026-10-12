@@ -39,6 +39,13 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
+    preBuildScripts:
+      - name: Check signing Team
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ -z "${DEVELOPMENT_TEAM}" ] && [ -z "${CI}" ]; then
+            echo "warning: No signing Team. macOS ties System Audio Recording to the app's signature, so an ad-hoc build hears only silence after every rebuild. Pick your Team under Signing & Capabilities, then run scripts/save-signing-team.sh."
+          fi
     dependencies:
       - package: KeyboardShortcuts
       - package: VibeCore

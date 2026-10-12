@@ -45,6 +45,15 @@ struct NewMeetingView: View {
                         .textFieldStyle(.roundedBorder)
                     }
 
+                    if CodeSigning.isAdHoc {
+                        Label("This build has no signing Team, so macOS may give it only silence from the call. Pick your Team in Xcode and run scripts/save-signing-team.sh (see the README).", systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout)
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open Audio check") { app.windows.showAudioCheck() }
+                            .controlSize(.small)
+                    }
+
                     if !app.settings.hasAPIKey {
                         Label("No Claude API key yet. Subtitles will work, but replies need a key.", systemImage: "key")
                             .font(.callout)

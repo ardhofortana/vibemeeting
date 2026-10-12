@@ -45,6 +45,9 @@ final class MeetingSession: Identifiable {
             case themTranscriptionFailed
             case youTranscriptionFailed
             case echoCancellationOff
+            /// Audio reaches the stream but speech recognition produces nothing.
+            case themNoWords
+            case youNoWords
         }
 
         let kind: Kind
@@ -96,6 +99,8 @@ final class MeetingSession: Identifiable {
     @ObservationIgnored private var isDirty = false
     @ObservationIgnored private var lastSave = Date()
     @ObservationIgnored private var listeningSince = Date()
+    /// The diagnostics report taken just before capture stopped (no transcript text).
+    @ObservationIgnored private(set) var diagnosticsReport: String?
 
     /// Called after every save so the history list stays current.
     @ObservationIgnored var onSave: ((MeetingRecord) -> Void)?
@@ -140,7 +145,15 @@ final class MeetingSession: Identifiable {
         status = .ending
         tickTask?.cancel()
         replyTask?.cancel()
+        // Stream counters first, synchronously, while they still show the live state.
+        let streamLines = pipeline.streamReportLines()
         await pipeline.stop()
+        // System details after capture stopped, so a slow speech service can't keep
+        // the mic and tap running.
+        let environment = await AudioEnvironment.boundedReport()
+        diagnosticsReport = (environment + [
+            "You segments dropped as speaker echo: \(transcript.droppedEchoSegments)",
+        ] + streamLines).joined(separator: "\n")
         // Let queued recognizer updates land before locking the transcript.
         await Task.yield()
         transcript.finalizeAll()
@@ -164,6 +177,8 @@ final class MeetingSession: Identifiable {
                 : "Can't hear the call: macOS gives VibeMeeting only silence. Re-allow it under Privacy & Security → Screen & System Audio Recording → System Audio Recording Only, then restart the meeting."
         case .unreadableBuffers, .noAudioIO:
             return "Can't read system audio. Reconnecting…"
+        case .deviceKeepsChanging:
+            return "System audio keeps changing devices or format, so VibeMeeting stopped reconnecting. End and restart the meeting."
         }
     }
 
@@ -188,8 +203,8 @@ final class MeetingSession: Identifiable {
         case .micReconnected:
             removeNotice(.micUnavailable)
             if status == .reconnecting { status = .listening }
-        case .voiceProcessingUnavailable:
-            addNotice(.echoCancellationOff, "Echo cancellation is off for this audio setup. A headset keeps Them and You apart.")
+        case .voiceProcessingUnavailable(let reason):
+            addNotice(.echoCancellationOff, "\(reason). Echo cancellation is off; a headset keeps Them and You apart.")
         }
     }
 
@@ -484,6 +499,8 @@ final class MeetingSession: Identifiable {
             } else if youQuiet < 1 {
                 removeNotice(.micSilent)
             }
+            checkRecognition(pipeline.themDiagnostics.read(), kind: .themNoWords, label: Speaker.them.label, listenedFor: listenedFor)
+            checkRecognition(pipeline.youDiagnostics.read(), kind: .youNoWords, label: Speaker.you.label, listenedFor: listenedFor)
         }
 
         // Keep the 5-minute prompt cache alive between replies (cheap cache reads).
@@ -494,6 +511,22 @@ final class MeetingSession: Identifiable {
         if isDirty, now.timeIntervalSince(lastSave) > 15 {
             record.turns = transcript.turns
             save()
+        }
+    }
+
+    /// Turns "meter moves but no words" into an explicit notice that names the stage.
+    private func checkRecognition(_ snapshot: StreamDiagnostics.Snapshot, kind: Notice.Kind, label: String, listenedFor: TimeInterval) {
+        if snapshot.volatileResults + snapshot.finalResults > 0 {
+            removeNotice(kind)
+            return
+        }
+        guard listenedFor > 15 else { return }
+        if snapshot.peakRMS > AudioLevelMeter.silenceRMS, snapshot.buffersToAnalyzer > 0,
+           snapshot.analyzerPeakRMS <= AudioLevelMeter.silenceRMS {
+            addNotice(kind, "\(label): audio is captured, but speech recognition only receives silence. Open the stethoscope and copy the report.")
+        } else if snapshot.speechLevelChunks >= 100 {
+            // About 10 s of speech-level audio reached the recognizer with no result.
+            addNotice(kind, "\(label): speech recognition hears speech but returns no words. VibeMeeting transcribes English (en-US) only.")
         }
     }
 

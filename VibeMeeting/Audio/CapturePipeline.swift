@@ -15,7 +15,8 @@ final class CapturePipeline {
         case appAudioNotFound
         case micFailed(Error)
         case micReconnected
-        case voiceProcessingUnavailable
+        /// Echo cancellation was asked for but had to be turned off (the reason says why).
+        case voiceProcessingUnavailable(String)
     }
 
     struct Configuration {
@@ -32,6 +33,8 @@ final class CapturePipeline {
     private let mic: MicrophoneCapture
     private let themTranscriber: LiveTranscriber
     private let youTranscriber: LiveTranscriber
+    /// System audio is metered and converted here, not on the Core Audio IO thread.
+    private let systemProcessing = DispatchQueue(label: "VibeMeeting.CapturePipeline.system", qos: .userInitiated)
     private(set) var isRunning = false
 
     /// Recognizer output, in order, on the main actor.
@@ -51,35 +54,58 @@ final class CapturePipeline {
         guard !isRunning else { return }
         isRunning = true
 
-        // One after the other: both may need the same speech model download.
+        // One after the other: both may need the same speech model download. After
+        // every await, check that stop() didn't run meanwhile; anything started after
+        // a stop would never be torn down.
         await startTranscriber(themTranscriber)
+        guard isRunning else { return }
         await startTranscriber(youTranscriber)
         guard isRunning else { return }
 
         await startSystemAudio(configuration.source)
-        guard isRunning else { return }
+        guard isRunning else {
+            await systemTap.stop()
+            return
+        }
         startMicrophone(voiceProcessing: configuration.voiceProcessing)
     }
 
     func stop() async {
         guard isRunning else { return }
         isRunning = false
-        systemTap.stop()
+        await systemTap.stop()
         mic.stop()
+        // Let system audio already queued for processing reach the transcriber, so
+        // the last words of a meeting aren't cut off.
+        let processing = systemProcessing
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            processing.async { continuation.resume() }
+        }
         await themTranscriber.stop()
         await youTranscriber.stop()
     }
 
-    /// A copyable plain-text report. Contains no transcript text.
-    func report() async -> String {
-        var lines = await AudioEnvironment.report()
-        lines.append("voice processing active: \(mic.voiceProcessingActive)")
+    /// The per-stream part of the report. Synchronous, so it can be taken right
+    /// before stopping without waiting on any system service.
+    func streamReportLines() -> [String] {
+        var lines = [
+            "mic route: \(mic.routeSummary)",
+            "voice processing active: \(mic.voiceProcessingActive)",
+            "voice processing off because: \(mic.voiceProcessingOffReason ?? "–")",
+        ]
         for diagnostics in [themDiagnostics, youDiagnostics] {
             lines.append("")
             lines.append("[\(diagnostics.name)]")
             lines.append(contentsOf: diagnostics.read().reportLines())
         }
-        return lines.joined(separator: "\n")
+        return lines
+    }
+
+    /// A copyable plain-text report. Contains no transcript text.
+    func report(extra: [String] = []) async -> String {
+        let streams = streamReportLines()
+        let environment = await AudioEnvironment.boundedReport()
+        return (environment + extra + streams).joined(separator: "\n")
     }
 
     // MARK: - Private
@@ -108,6 +134,7 @@ final class CapturePipeline {
         let meter = themMeter
         let diagnostics = themDiagnostics
         let transcriber = themTranscriber
+        let processing = systemProcessing
         let tap = systemTap
         tap.onReconnect = { [weak self] result in
             switch result {
@@ -118,16 +145,19 @@ final class CapturePipeline {
         tap.onProblem = { [weak self] problem in
             self?.onEvent?(.systemAudioProblem(problem))
         }
+        // Runs on the Core Audio IO thread with a buffer the tap already copied:
+        // hand it on and return. The serial queue keeps the order.
         let handler: SystemAudioTap.BufferHandler = { buffer in
-            diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
-            transcriber.append(buffer)
+            let owned = OwnedBuffer(buffer: buffer)
+            processing.async {
+                diagnostics.recordCapture(owned.buffer, rms: meter.update(with: owned.buffer))
+                transcriber.append(owned.buffer)
+            }
         }
         do {
-            // Off the main actor: while the System Audio Recording prompt is
-            // unanswered, creating the aggregate device blocks.
-            try await Task.detached(priority: .userInitiated) {
-                try tap.start(source: source, handler: handler)
-            }.value
+            // Suspends rather than blocks: while the System Audio Recording prompt is
+            // unanswered, creating the aggregate device can take a long time.
+            try await tap.start(source: source, handler: handler)
             if tap.fellBackToAllAudio {
                 onEvent?(.appAudioNotFound)
             }
@@ -151,15 +181,18 @@ final class CapturePipeline {
             case .failure(let error): self?.onEvent?(.micFailed(error))
             }
         }
+        // Only real fallbacks are reported; skipping echo cancellation on headphones
+        // isn't a problem.
+        mic.onVoiceProcessingFallback = { [weak self] reason in
+            self?.onEvent?(.voiceProcessingUnavailable(reason))
+        }
         do {
             diagnostics.update { $0.captureState = "Starting" }
+            // Buffers arrive mono (channel 0 with echo cancellation, live channels
+            // averaged without), so the meter shows exactly what speech gets.
             try mic.start(voiceProcessing: voiceProcessing) { buffer in
                 diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
                 transcriber.append(buffer)
-            }
-            diagnostics.update { $0.captureState = self.mic.voiceProcessingActive ? "Running (voice processing)" : "Running" }
-            if voiceProcessing && !mic.voiceProcessingActive {
-                onEvent?(.voiceProcessingUnavailable)
             }
         } catch {
             Log.audio.error("Mic failed: \(String(describing: error), privacy: .public)")
@@ -170,4 +203,9 @@ final class CapturePipeline {
             onEvent?(.micFailed(error))
         }
     }
+}
+
+/// A buffer the tap copied for us, handed to another queue. Nothing else holds it.
+private struct OwnedBuffer: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
 }

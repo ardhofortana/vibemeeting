@@ -79,6 +79,11 @@ enum AudioEnvironment {
         return "\(name) [\(uid)]"
     }
 
+    /// The report, or a note if the speech service takes too long to answer.
+    static func boundedReport() async -> [String] {
+        await firstResult(within: 3) { await AudioEnvironment.report() } ?? ["(system details timed out)"]
+    }
+
     static func report() async -> [String] {
         var lines: [String] = []
         let info = Bundle.main.infoDictionary
@@ -103,6 +108,9 @@ enum AudioEnvironment {
         lines.append("default input: \(deviceName(input))")
 
         lines.append("speech transcriber available: \(SpeechTranscriber.isAvailable)")
+        let supported = await SpeechTranscriber.supportedLocales
+        let hasIndonesian = supported.contains { $0.language.languageCode?.identifier == "id" }
+        lines.append("speech supported locales: \(supported.count) (Indonesian: \(hasIndonesian ? "yes" : "no"))")
         let installed = await SpeechTranscriber.installedLocales.map { $0.identifier }.sorted()
         lines.append("speech installed locales: \(installed.isEmpty ? "none" : installed.joined(separator: ", "))")
         let reserved = await AssetInventory.reservedLocales.map { $0.identifier }.sorted()

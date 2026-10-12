@@ -338,7 +338,7 @@ private struct AudioSettings: View {
 
             Section {
                 Toggle("Echo cancellation", isOn: $settings.voiceProcessing)
-                Text("Keeps the other side's voice from the speakers out of your mic. macOS may lower other apps' volume a little while it's on. With a headset you can turn it off.")
+                Text("Only used when sound comes out of speakers; skipped with headphones or AirPods. While it runs, macOS turns other apps down (the call too), and the call app's mic may get quieter. Without it, the other side's voice that your mic picks up is filtered out of the transcript instead.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

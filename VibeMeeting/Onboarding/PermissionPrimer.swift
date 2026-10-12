@@ -37,12 +37,13 @@ enum PermissionPrimer {
         var systemAudio = true
         let tap = SystemAudioTap()
         do {
-            try tap.start(source: .allSystemAudio) { _ in }
+            // Suspends instead of blocking while the prompt is unanswered.
+            try await tap.start(source: .allSystemAudio) { _ in }
             try? await Task.sleep(for: .seconds(1))
         } catch {
             systemAudio = false
         }
-        tap.stop()
+        await tap.stop()
 
         var speechModel = true
         var speechError: String?

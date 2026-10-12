@@ -5,16 +5,36 @@ import Foundation
 /// Updated from audio threads, read by the UI. Never holds transcript text.
 final class StreamDiagnostics: @unchecked Sendable {
     struct Snapshot: Equatable {
+        // Capture
         var captureState = "Not started"
+        /// How capture is set up: the tap stream and aggregate input streams for
+        /// Them; the device route and voice processing for You. Set by the capture
+        /// object; per-buffer updates never overwrite it.
+        var deviceDetail = "–"
         var captureBuffers = 0
         var capturedFrames = 0
         /// Capture callbacks whose audio couldn't be read.
         var unreadableBuffers = 0
+        /// Buffer-list layout of an unreadable IO cycle, e.g. "3 buffers: 1ch/2048B … 1ch/2048B".
+        var unreadableLayout: String?
+        /// Format of the buffers handed to speech (mono after the fold).
         var sourceFormat = "–"
-        /// Loudest RMS seen so far (0…1). Zero means only digital silence arrived.
+        /// Loudest RMS (0…1) of the audio handed to speech. Zero: only digital silence.
         var peakRMS: Float = 0
+        /// Loudest RMS per raw input channel before the mono fold (mic only). With
+        /// voice processing on, channel 0 should be the processed voice.
+        var channelPeakRMS: [Float] = []
         var lastSoundAt: Date?
+        /// Seconds since the source last delivered a non-zero sample (system tap).
+        /// Climbing while a call plays = macOS hands this build digital silence.
+        var secondsSinceNonZero: Double?
+        /// True for streams that track non-zero samples (the system tap).
+        var tracksNonZero = false
+        var rebuilds = 0
+        var lastRebuildReason: String?
+        var problem: String?
 
+        // Speech
         var transcriberState = "Not started"
         var analyzerFormat = "–"
         var buffersToAnalyzer = 0
@@ -23,6 +43,8 @@ final class StreamDiagnostics: @unchecked Sendable {
         /// peak isn't means audio was lost in conversion.
         var analyzerPeakRMS: Float = 0
         var lastAudibleToAnalyzerAt: Date?
+        /// 100 ms chunks sent to speech at speech level (RMS > 0.01, about -40 dBFS).
+        var speechLevelChunks = 0
         var droppedChunks = 0
         var conversionFailures = 0
         var lastConversionError: String?
@@ -52,7 +74,7 @@ final class StreamDiagnostics: @unchecked Sendable {
         lock.withLock { snapshot = Snapshot() }
     }
 
-    /// Records one captured buffer. Cheap enough for the audio thread.
+    /// Records one buffer handed to speech. Not for the Core Audio IO thread.
     func recordCapture(_ buffer: AVAudioPCMBuffer, rms: Float) {
         lock.withLock {
             snapshot.captureBuffers += 1
@@ -62,6 +84,20 @@ final class StreamDiagnostics: @unchecked Sendable {
             }
             if rms > snapshot.peakRMS { snapshot.peakRMS = rms }
             if rms > AudioLevelMeter.silenceRMS { snapshot.lastSoundAt = Date() }
+        }
+    }
+
+    /// Keeps the loudest RMS seen on each raw input channel.
+    func recordChannels(_ channelRMS: [Float]) {
+        guard !channelRMS.isEmpty else { return }
+        lock.withLock {
+            if snapshot.channelPeakRMS.count != channelRMS.count {
+                snapshot.channelPeakRMS = channelRMS
+            } else {
+                for index in channelRMS.indices where channelRMS[index] > snapshot.channelPeakRMS[index] {
+                    snapshot.channelPeakRMS[index] = channelRMS[index]
+                }
+            }
         }
     }
 
@@ -79,20 +115,52 @@ final class StreamDiagnostics: @unchecked Sendable {
 }
 
 extension StreamDiagnostics.Snapshot {
+    /// The first thing that looks wrong, in pipeline order, or nil if nothing does.
+    /// Shown at the top of each column so the next test names the broken stage.
+    func verdict() -> String? {
+        if captureBuffers == 0 && unreadableBuffers > 0 {
+            return "Capture: every buffer is unreadable (layout mismatch)"
+        }
+        if captureBuffers == 0 {
+            return captureState.hasPrefix("Failed") ? "Capture failed to start" : "Capture: no buffers yet"
+        }
+        if peakRMS <= AudioLevelMeter.silenceRMS {
+            return "Capture: only digital silence (permission, or wrong mic channel)"
+        }
+        if buffersToAnalyzer == 0 {
+            return conversionFailures > 0 ? "Conversion fails before speech" : "Nothing reaches speech (\(transcriberState))"
+        }
+        if analyzerPeakRMS <= AudioLevelMeter.silenceRMS {
+            return "Speech only receives silence (lost in conversion)"
+        }
+        if volatileResults + finalResults == 0 && speechLevelChunks >= 50 {
+            return "Speech hears speech but returns no words (language? model?)"
+        }
+        return nil
+    }
+
     /// Plain-text lines for the copyable report.
     func reportLines(now: Date = Date()) -> [String] {
         func ago(_ date: Date?) -> String {
             guard let date else { return "never" }
             return String(format: "%.1fs ago", now.timeIntervalSince(date))
         }
+        let channels = channelPeakRMS.isEmpty ? "–" : channelPeakRMS.map { String(format: "%.4f", $0) }.joined(separator: " ")
+        let nonZero = tracksNonZero ? (secondsSinceNonZero.map { String(format: "%.1fs ago", $0) } ?? "never (only exact zeros)") : "–"
         return [
+            "verdict: \(verdict() ?? "ok")",
             "capture: \(captureState)",
+            "  device \(deviceDetail)",
             "  buffers \(captureBuffers), frames \(capturedFrames), unreadable \(unreadableBuffers)",
+            "  unreadable layout: \(unreadableLayout ?? "–")",
             "  format \(sourceFormat)",
             String(format: "  peak RMS %.5f, last sound %@", peakRMS, ago(lastSoundAt)),
+            "  raw channel peaks: \(channels)",
+            "  last non-zero sample: \(nonZero)",
+            "  rebuilds \(rebuilds), last reason: \(lastRebuildReason ?? "–"), problem: \(problem ?? "none")",
             "transcriber: \(transcriberState)",
             "  analyzer format \(analyzerFormat)",
-            "  to analyzer: chunks \(buffersToAnalyzer), frames \(framesToAnalyzer), dropped \(droppedChunks), conversion failures \(conversionFailures)",
+            "  to analyzer: chunks \(buffersToAnalyzer), frames \(framesToAnalyzer), speech-level \(speechLevelChunks), dropped \(droppedChunks), conversion failures \(conversionFailures)",
             String(format: "  analyzer peak RMS %.5f, last audible %@", analyzerPeakRMS, ago(lastAudibleToAnalyzerAt)),
             "  last conversion error: \(lastConversionError ?? "none")",
             "  results: volatile \(volatileResults), final \(finalResults), last \(ago(lastResultAt))",

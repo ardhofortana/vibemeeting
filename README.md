@@ -128,10 +128,10 @@ Cache dipanaskan dengan request `max_tokens: 0` saat **Start listening** dan dij
 - **Model.** Reply memakai **Claude Haiku 5.5** dengan thinking dimatikan, karena PRD meminta model tercepat untuk Reply. Rekap memakai **Claude Opus 5.5** dengan server-side refusal fallback. Keduanya bisa diganti di Settings, dan pilihan finalnya ditentukan dari hasil `vibe-latency`. Dengan Haiku, biayanya jauh di bawah target US$1 per jam.
 - **Penyimpanan memakai file JSON, bukan SwiftData.** Satu file per meeting di `~/Library/Application Support/VibeMeeting/Sessions`. Alasannya: bisa dites di luar Mac, mudah dibaca, tidak perlu migrasi skema, dan hapus berarti file benar-benar terhapus.
 - **Hide from screen sharing.** Apple sekarang menganggap `NSWindow.sharingType = .none` sebagai legacy, dan screen share berbasis ScreenCaptureKit di macOS 15+ bisa tetap menangkap overlay. Opsinya tetap ada (default menyala), tapi sembunyikan overlay dengan ⌥H sebelum share screen.
-- **Echo cancellation.** Voice processing Apple bisa sedikit mengecilkan volume app lain, dan pada beberapa kombinasi device (misalnya mic Bluetooth dengan speaker internal) tidak bisa aktif. App otomatis fallback ke mic biasa dan memberi tahu kamu. Sebagai lapis kedua, `EchoFilter` membuang teks **You** yang hampir identik dengan ucapan **Them** beberapa detik sebelumnya.
+- **Echo cancellation default mati.** Voice processing macOS mengecilkan volume semua app lain (termasuk call-nya) dan bisa membuat mic app call jadi lebih pelan. Sebagai gantinya, `EchoFilter` membuang teks **You** yang hampir identik dengan ucapan **Them** beberapa detik sebelumnya. Kalau dinyalakan di Settings → Audio, app hanya memakainya saat suara keluar lewat speaker dan otomatis kembali ke mic biasa kalau gagal. Dengan voice processing, macOS memecah audio mic jadi beberapa channel dan suara yang sudah diproses ada di channel 0, jadi app mengambil channel itu saja.
 - **Hotkey hanya aktif selama meeting**, supaya ⌥Space tetap berfungsi normal di app lain.
 - **Pre-draft** (eksperimen opsional M3) belum dibuat.
-- **Distribusi** (Developer ID + notarization) belum di-setup. Untuk pemakaian pribadi, Run dari Xcode sudah cukup.
+- **Distribusi** (Developer ID + notarization) belum di-setup. Untuk pemakaian pribadi, Run dari Xcode sudah cukup, asalkan Team sudah dipilih dan disimpan (lihat Build & jalankan).
 
 ## Pengembangan
 

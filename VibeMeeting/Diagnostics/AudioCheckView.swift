@@ -39,6 +39,8 @@ final class AudioCheckModel {
         self.pipeline = pipeline
         let source: SystemAudioTap.Source = settings.audioSourceBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
         await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing))
+        // stop() may have run while starting (e.g. a meeting began); don't come back to life.
+        guard state == .starting, self.pipeline === pipeline else { return }
         state = .running
     }
 
@@ -57,7 +59,7 @@ final class AudioCheckModel {
         case .appAudioNotFound: return "Chosen app not playing; using all system audio"
         case .micFailed(let error): return "Microphone failed: \(String(describing: error))"
         case .micReconnected: return "Microphone reconnected"
-        case .voiceProcessingUnavailable: return "Voice processing unavailable; plain mic in use"
+        case .voiceProcessingUnavailable(let reason): return "Echo cancellation off: \(reason)"
         }
     }
 }
@@ -82,6 +84,9 @@ struct AudioCheckView: View {
             }
             LabeledContent("System audio permission", value: SystemAudioPermission.status.rawValue)
                 .font(.callout)
+            if let report = app.lastMeetingReport {
+                CopyButton(title: "Copy last meeting's report", text: report)
+            }
 
             if let session = app.activeSession, session.isActive {
                 Text("A meeting is running, so this shows its live audio.")
@@ -94,7 +99,11 @@ struct AudioCheckView: View {
                 HStack {
                     switch model.state {
                     case .idle:
-                        Button("Start check") { Task { await model.start(settings: app.settings) } }
+                        Button("Start check") {
+                            // Never a second capture pipeline next to a meeting's.
+                            guard app.activeSession?.isActive != true else { return }
+                            Task { await model.start(settings: app.settings) }
+                        }
                             .buttonStyle(.borderedProminent)
                     case .starting:
                         ProgressView().controlSize(.small)
@@ -144,7 +153,9 @@ struct DiagnosticsPanel: View {
             HStack {
                 Button(copied ? "Copied" : "Copy report") {
                     Task {
-                        let report = await pipeline.report()
+                        let report = await pipeline.report(extra: [
+                            "You segments dropped as speaker echo: \(transcript.droppedEchoSegments)",
+                        ])
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(report, forType: .string)
                         copied = true
@@ -185,13 +196,35 @@ struct DiagnosticsPanel: View {
             .padding(8)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
 
+            if let verdict = snapshot.verdict() {
+                Label(verdict, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Group {
                 row("Capture", snapshot.captureState)
+                row("Device", snapshot.deviceDetail)
                 row("Buffers in", "\(snapshot.captureBuffers)" + (snapshot.unreadableBuffers > 0 ? " (\(snapshot.unreadableBuffers) unreadable)" : ""))
+                if let layout = snapshot.unreadableLayout {
+                    row("Bad layout", layout)
+                }
                 row("Format", snapshot.sourceFormat)
+                if !snapshot.channelPeakRMS.isEmpty {
+                    row("Channels", snapshot.channelPeakRMS.map { String(format: "%.3f", $0) }.joined(separator: " "))
+                }
+                if snapshot.tracksNonZero {
+                    row("Non-zero", snapshot.secondsSinceNonZero.map { String(format: "last %.1fs ago", $0) } ?? "never: only exact zeros")
+                }
+                if snapshot.rebuilds > 0 || snapshot.problem != nil {
+                    row("Rebuilds", "\(snapshot.rebuilds)" + (snapshot.lastRebuildReason.map { ", last: \($0)" } ?? "") + (snapshot.problem.map { " · \($0)" } ?? ""))
+                }
                 row("Loudest", String(format: "%.4f", snapshot.peakRMS) + (snapshot.captureBuffers > 0 && snapshot.peakRMS <= AudioLevelMeter.silenceRMS ? " · only silence" : ""))
+            }
+            .font(.caption)
+            Group {
                 row("Transcriber", snapshot.transcriberState)
-                row("To speech", "\(snapshot.buffersToAnalyzer) chunks" + (snapshot.conversionFailures > 0 ? " · \(snapshot.conversionFailures) failed" : ""))
+                row("To speech", "\(snapshot.buffersToAnalyzer) chunks · \(snapshot.speechLevelChunks) speech-level" + (snapshot.droppedChunks > 0 ? " · \(snapshot.droppedChunks) dropped" : "") + (snapshot.conversionFailures > 0 ? " · \(snapshot.conversionFailures) failed" : ""))
                 row("Speech gets", snapshot.buffersToAnalyzer == 0 ? "–" : (snapshot.analyzerPeakRMS > AudioLevelMeter.silenceRMS ? String(format: "sound (%.4f)", snapshot.analyzerPeakRMS) : "only silence"))
                 row("Results", "\(snapshot.volatileResults) live · \(snapshot.finalResults) final")
                 if let error = snapshot.lastError ?? snapshot.lastConversionError {
@@ -211,6 +244,21 @@ struct DiagnosticsPanel: View {
             Text(value)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Copies a report to the clipboard and says so.
+struct CopyButton: View {
+    let title: String
+    let text: String
+    @State private var copied = false
+
+    var body: some View {
+        Button(copied ? "Copied" : title) {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            copied = true
         }
     }
 }
