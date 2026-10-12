@@ -22,7 +22,21 @@ xcodegen generate          # membuat VibeMeeting.xcodeproj dari project.yml
 open VibeMeeting.xcodeproj
 ```
 
-Di Xcode, buka target **VibeMeeting → Signing & Capabilities**, pilih Team kamu, lalu Run (⌘R). Ikon gelombang akan muncul di menu bar.
+Di Xcode, buka target **VibeMeeting → Signing & Capabilities** dan pilih Team kamu (Apple ID gratis/Personal Team cukup). Lalu simpan Team itu supaya tidak hilang setiap `xcodegen generate`:
+
+```bash
+scripts/save-signing-team.sh                        # membaca Team yang kamu pilih di Xcode
+xcodegen generate
+tccutil reset AudioCapture com.ardhofortana.VibeMeeting   # sekali, supaya macOS minta izin lagi untuk build yang sudah bertanda tangan Team
+```
+
+Lalu Run (⌘R). Ikon gelombang akan muncul di menu bar.
+
+> **Kenapa Team penting:** tanpa Team, Xcode menandatangani build secara ad-hoc ("Sign to Run Locally"). macOS mengikat izin System Audio Recording ke tanda tangan itu, jadi setiap rebuild dianggap app baru. Toggle di Privacy & Security tetap terlihat menyala, tapi audio sistem yang diterima hanya hening.
+
+### Audio check
+
+Menu bar → **Audio check…** menjalankan seluruh jalur audio → transkripsi tanpa meeting. Putar video YouTube berbahasa Inggris dan ucapkan beberapa kalimat bahasa Inggris. Kedua kolom (Them dan You) harus menunjukkan level dan teks dalam satu-dua detik. **Copy report** menyalin diagnostik (format audio, jumlah buffer, error, status izin, tanda tangan build) tanpa isi transkrip. Saat meeting berjalan, diagnostik yang sama ada di tombol stetoskop di overlay.
 
 Saat pertama kali dibuka, jendela Welcome memandu tiga hal:
 
@@ -59,7 +73,7 @@ PRD menetapkan M0 sebagai spike untuk bagian paling berisiko. Kodenya sudah ada;
    ANTHROPIC_API_KEY=sk-ant-... swift run vibe-latency --model claude-haiku-5-5 --model claude-opus-5-5
    ```
    Target: kata pertama ≤1,5 detik (median) dan ≤3 detik (p90), script lengkap ≤4 detik. Pakai `--context proposal.txt` dan `--about about.txt` untuk mengetes dengan konteks asli. Biaya satu run kira-kira beberapa sen.
-3. **Audio lawan bicara:** putar video YouTube atau masuk ke test call Zoom, lalu pastikan subtitle **Them** muncul dalam ≤1 detik.
+3. **Audio lawan bicara:** buka **Audio check**, putar video YouTube, lalu pastikan teks **Them** muncul dalam ≤1 detik. Transkripsi hanya untuk bahasa Inggris.
 4. **Echo tanpa headset:** pakai speaker laptop dan pastikan suara lawan tidak muncul sebagai **You**. Bila masih bocor, pakai headset atau cek Settings → Audio.
 5. **Hotkey:** coba setiap hotkey saat Zoom atau Chrome sedang fokus. Bila ⌥R/⌥S/⌥H kadang malah mengetik karakter (macOS 26 bisa menyusun ⌥+huruf menjadi karakter seperti ®), ganti ke ⌃⌥R dan seterusnya.
 6. **Beban sistem:** pantau CPU di Activity Monitor selama call 30 menit.
