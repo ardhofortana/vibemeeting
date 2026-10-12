@@ -40,8 +40,11 @@ final class CapturePipeline {
     let youDiagnostics = StreamDiagnostics(name: "You (microphone)")
     let themMeter = AudioLevelMeter()
     let youMeter = AudioLevelMeter()
-    /// Uses the call's audio as the reference to find it in the mic.
-    let echoGate = EchoGate()
+    /// Uses the call's audio as the reference to find it in the mic. The search
+    /// starts 50 ms below zero delay: the tap's and the mic's host times may not
+    /// follow the same convention on every device, and a gate that never arms
+    /// only leaves duplicates the text filter still catches.
+    let echoGate = EchoGate(configuration: .init(minLag: -0.05))
 
     private let systemTap: SystemAudioTap
     private let mic: MicrophoneCapture

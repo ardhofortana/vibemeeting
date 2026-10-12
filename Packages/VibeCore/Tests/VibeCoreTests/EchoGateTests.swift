@@ -38,19 +38,24 @@ final class EchoGateTests: XCTestCase {
         }
     }
 
-    /// Both talk at once: the user is 15 dB louder than the bleed and must pass,
-    /// while the bleed around them is still gated.
+    /// Both talk at once for 17 s: the user is 15 dB louder than the bleed,
+    /// with the same speech model as the other side (bursts ±6 dB, syllable
+    /// dips of 12 dB), and must pass, dips included, while the bleed around
+    /// them is still gated.
     func testDoubleTalkPassesTheUser() {
-        let scene = Scene(
-            them: .speech(seed: 51, from: 0.2, to: 20),
-            user: .speech(seed: 61, from: 3, to: 20, levelDB: -25, spreadDB: 2, dipDB: 6)
-        )
-        let result = scene.run(seed: 4)
-        let user = result.fraction(attenuated: false) { t in scene.user!.isActive(at: t) }
-        XCTAssertGreaterThanOrEqual(user.value, 0.95, "user untouched: \(user)")
-        let bleed = result.fraction(attenuated: true) { t in t >= 2 && scene.isBleedOnly(at: t) }
-        XCTAssertGreaterThanOrEqual(bleed.value, 0.6, "bleed attenuated: \(bleed)")
-        XCTAssertTrue(result.stats.isCoupled)
+        for seed in UInt64(0)..<4 {
+            let scene = Scene(
+                them: .speech(seed: 51 + seed, from: 0.2, to: 20),
+                user: .speech(seed: 61 + seed, from: 3, to: 20, levelDB: -25)
+            )
+            let result = scene.run(seed: 4 + seed)
+            let user = result.fraction(attenuated: false) { t in scene.user!.isActive(at: t) }
+            XCTAssertGreaterThanOrEqual(user.value, 0.95, "seed \(seed) user untouched: \(user)")
+            // Learned by 4 s even when the other side's first 3 s are sparse.
+            let bleed = result.fraction(attenuated: true) { t in t >= 4 && scene.isBleedOnly(at: t) }
+            XCTAssertGreaterThanOrEqual(bleed.value, 0.9, "seed \(seed) bleed attenuated: \(bleed)")
+            XCTAssertTrue(result.stats.isCoupled, "seed \(seed)")
+        }
     }
 
     /// The other side talks for 3 s and stops; the user answers 100 ms later
@@ -139,6 +144,122 @@ final class EchoGateTests: XCTestCase {
         XCTAssertFalse(result.stats.isCoupled)
         let user = result.fraction(attenuated: false) { t in scene.user!.isActive(at: t) }
         XCTAssertGreaterThanOrEqual(user.value, 0.98, "quiet user untouched: \(user)")
+    }
+
+    /// Headphones plugged in while the user is already talking over the other
+    /// side: the user fills the bins that would show the bleed is gone, so the
+    /// coupling must be dropped from the bins in their pauses.
+    func testCouplingDropsWhenHeadphonesGoInWhileTheUserTalks() {
+        for level in [-38.0, -34.0] {
+            var scene = Scene(
+                them: .speech(seed: 111, from: 0.2, to: 16),
+                user: .speech(seed: 121, from: 5.5, to: 16, levelDB: level, spreadDB: 1),
+                duration: 16
+            )
+            scene.bleedUntil = 6
+            let result = scene.run(seed: 9)
+            XCTAssertFalse(result.stats.isCoupled, "user \(level)")
+            let user = result.fraction(attenuated: false) { t in t >= 6 && scene.user!.isActive(at: t) }
+            XCTAssertGreaterThanOrEqual(user.value, 0.9, "user \(level) untouched: \(user)")
+            let late = result.fraction(attenuated: true) { t in t >= 8.5 }
+            XCTAssertEqual(late.value, 0, "user \(level) still gated: \(late)")
+        }
+    }
+
+    /// Speaker volume turned down 8 dB while the user talks over the other
+    /// side: the gain follows the bleed down, so the user, 12 dB above the new
+    /// bleed, mostly passes.
+    func testVolumeTurnedDownDuringDoubleTalk() {
+        var scene = Scene(
+            them: .speech(seed: 401, from: 0.2, to: 16),
+            user: .speech(seed: 402, from: 8, to: 16, levelDB: -36),
+            duration: 16
+        )
+        scene.bleedStep = (time: 8, gainDB: -28)
+        let result = scene.run(seed: 5)
+        let user = result.fraction(attenuated: false) { t in t >= 8 && t < 10 && scene.user!.isActive(at: t) }
+        XCTAssertGreaterThanOrEqual(user.value, 0.7, "user untouched in 8-10 s: \(user)")
+        XCTAssertLessThan(result.stats.couplingGainDB ?? 0, -23)
+    }
+
+    /// Speaker volume turned up 10 dB: the louder gain is taken at the delay
+    /// already known, without the full repeat a new coupling needs.
+    func testVolumeTurnedUpIsFollowedQuickly() {
+        var scene = Scene(them: .speech(seed: 40, from: 0.2, to: 20), user: nil)
+        scene.bleedStep = (time: 10, gainDB: -10)
+        let result = scene.run(seed: 40)
+        let soon = result.fraction(attenuated: true) { t in t >= 10 && t < 13 && scene.isBleedOnly(at: t) }
+        XCTAssertGreaterThanOrEqual(soon.value, 0.45, "bleed attenuated in 10-13 s: \(soon)")
+        let later = result.fraction(attenuated: true) { t in t >= 13 && scene.isBleedOnly(at: t) }
+        XCTAssertGreaterThanOrEqual(later.value, 0.95, "bleed attenuated after 13 s: \(later)")
+        XCTAssertEqual(result.stats.couplingGainDB ?? .nan, -10, accuracy: 3)
+    }
+
+    /// The call audio carries the user's own voice a little late (monitoring,
+    /// a meeting app's mic test, the all-system tap): the mic leads the
+    /// reference, which bleed never does, so nothing couples.
+    func testOwnVoiceInTheCallAudioNeverCouples() {
+        for delay in [0.01, 0.02, 0.05] {
+            var scene = Scene(them: nil, user: .speech(seed: 141, from: 0.3, to: 20, levelDB: -25), bleedGainDB: nil)
+            scene.userInReference = (delay: delay, gainDB: -6)
+            let result = scene.run(seed: 14)
+            XCTAssertEqual(result.attenuatedCount, 0, "delay \(delay)")
+            XCTAssertFalse(result.stats.isCoupled, "delay \(delay)")
+        }
+    }
+
+    /// A steady noise bed in the call audio (an open mic on the other side)
+    /// sits well above -50 dBFS: activity is judged against the reference's own
+    /// noise floor, so the coupling is still learned, and still only from the
+    /// other side's voice.
+    func testNoiseBedInTheCallAudio() {
+        var scene = Scene(them: .speech(seed: 11, from: 0.2, to: 20), user: nil)
+        scene.referenceNoiseDB = -45
+        let result = scene.run(seed: 1)
+        XCTAssertTrue(result.stats.isCoupled)
+        let bleed = result.fraction(attenuated: true) { t in t >= 4 && scene.isBleedOnly(at: t) }
+        XCTAssertGreaterThanOrEqual(bleed.value, 0.8, "bleed attenuated: \(bleed)")
+
+        for seed in UInt64(0)..<2 {
+            var headphones = Scene(
+                them: .speech(seed: 31 + seed, from: 0.1, to: 20),
+                user: .speech(seed: 41 + seed, from: 0.3, to: 20, levelDB: -25),
+                bleedGainDB: nil
+            )
+            headphones.referenceNoiseDB = -45
+            let result = headphones.run(seed: 3 + seed)
+            XCTAssertFalse(result.stats.isCoupled, "seed \(seed)")
+            XCTAssertEqual(result.attenuatedCount, 0, "seed \(seed)")
+        }
+    }
+
+    /// Call audio added after the mic it overlaps can't be used: those mic
+    /// bins pass untouched, and the gate counts them.
+    func testLateReferenceIsNeverGatedButCounted() {
+        let scene = Scene(them: .speech(seed: 11, from: 0.2, to: 20), user: nil)
+        let onTime = EchoGate()
+        _ = scene.run(seed: 1, gate: onTime)
+        XCTAssertLessThan(onTime.unknownReferenceSeconds, 0.1)
+
+        let late = EchoGate()
+        let result = scene.run(seed: 1, feed: Feed(referenceLateness: 0.2), gate: late)
+        XCTAssertTrue(result.stats.isCoupled)
+        XCTAssertEqual(result.attenuatedCount, 0)
+        XCTAssertGreaterThan(late.unknownReferenceSeconds, 10)
+    }
+
+    /// The mic's clock steps back 2 s: the delay learned no longer holds, so
+    /// the coupling is forgotten instead of applied to the wrong call audio.
+    func testClockStepBackStartsOver() {
+        let scene = Scene(them: .speech(seed: 11, from: 0.2, to: 16), user: nil, duration: 16)
+        var feed = Feed()
+        feed.micClockStep = (time: 8, seconds: -2)
+        let result = scene.run(seed: 1, feed: feed)
+        let before = result.fraction(attenuated: true) { t in t >= 3 && t < 8 && scene.isBleedOnly(at: t) }
+        XCTAssertGreaterThanOrEqual(before.value, 0.8, "\(before)")
+        let after = result.fraction(attenuated: true) { t in t >= 8 }
+        XCTAssertEqual(after.value, 0, "\(after)")
+        XCTAssertFalse(result.stats.isCoupled)
     }
 
     /// Gains ramp inside gated bins: no sample jumps from untouched to silent.
@@ -323,6 +444,10 @@ struct Feed {
     var jitter: Double = 0
     /// Scene time after which no more reference audio arrives.
     var referenceUntil: Double = .infinity
+    /// Reference audio arrives only up to this long before the end of each mic buffer.
+    var referenceLateness = 0.0
+    /// From scene `time` on, the mic's timestamps are off by `seconds`.
+    var micClockStep: (time: Double, seconds: Double)?
 }
 
 struct Scene {
@@ -334,6 +459,10 @@ struct Scene {
     var bleedGainDB: Double? = -20
     /// Scene time after which the speakers stop bleeding (headphones plugged in).
     var bleedUntil: Double = .infinity
+    /// From scene `time` on, the bleed has this level instead (volume changed).
+    var bleedStep: (time: Double, gainDB: Double)?
+    /// The call audio also carries the user's own voice, this late and at this level.
+    var userInReference: (delay: Double, gainDB: Double)?
     /// Reverb the room adds to the bleed; nil for the direct sound only.
     var room: Room?
     var micNoiseDB = -70.0
@@ -407,7 +536,7 @@ struct Scene {
         while m < output.count {
             let micCount = min(Int(rng.uniform(Double(feed.micSizes.lowerBound)...Double(feed.micSizes.upperBound) + 0.999)), output.count - m)
             let micEnd = Double(m + micCount) / micRate
-            while r < reference.count, Double(r) / referenceRate < micEnd, Double(r) / referenceRate < feed.referenceUntil {
+            while r < reference.count, Double(r) / referenceRate < micEnd - feed.referenceLateness, Double(r) / referenceRate < feed.referenceUntil {
                 let count = min(Int(rng.uniform(Double(feed.referenceSizes.lowerBound)...Double(feed.referenceSizes.upperBound) + 0.999)), reference.count - r)
                 let start = origin + Double(r) / referenceRate + rng.uniform(-feed.jitter...feed.jitter)
                 reference.withUnsafeBufferPointer { buffer in
@@ -415,7 +544,8 @@ struct Scene {
                 }
                 r += count
             }
-            let start = origin + Double(m) / micRate + rng.uniform(-feed.jitter...feed.jitter)
+            var start = origin + Double(m) / micRate + rng.uniform(-feed.jitter...feed.jitter)
+            if let step = feed.micClockStep, Double(m) / micRate >= step.time { start += step.seconds }
             attenuated += output.withUnsafeMutableBufferPointer { buffer in
                 gate.process(UnsafeMutableBufferPointer(rebasing: buffer[m..<(m + micCount)]), sampleRate: micRate, startTime: start)
             }
@@ -428,10 +558,15 @@ struct Scene {
         let count = Int(duration * referenceRate)
         let floor = Float(Talk.amplitude(dB: referenceNoiseDB))
         var voice = Voice()
+        var ownVoice = Voice()
         return (0..<count).map { i in
             let t = Double(i) / referenceRate
             let amplitude = Float(them?.amplitude(at: t) ?? 0)
-            return amplitude * voice.next(&rng) + floor * rng.noise()
+            var sample = amplitude * voice.next(&rng) + floor * rng.noise()
+            if let own = userInReference, let user {
+                sample += Float(Talk.amplitude(dB: own.gainDB) * user.amplitude(at: t - own.delay)) * ownVoice.next(&rng)
+            }
+            return sample
         }
     }
 
@@ -439,6 +574,7 @@ struct Scene {
         let count = Int(duration * micRate)
         let noise = Float(Talk.amplitude(dB: micNoiseDB))
         let bleedGain = bleedGainDB.map { Float(Talk.amplitude(dB: $0)) } ?? 0
+        let step = bleedStep.map { (time: $0.time, gain: Float(Talk.amplitude(dB: $0.gainDB))) }
         var voice = Voice()
         var reverb = room.map { Reverb(room: $0, sampleRate: micRate) }
         return (0..<count).map { i in
@@ -454,7 +590,8 @@ struct Scene {
                 let index = Int(position.rounded(.down))
                 if index >= 0, index + 1 < reference.count {
                     let fraction = Float(position - Double(index))
-                    bleed = bleedGain * (reference[index] * (1 - fraction) + reference[index + 1] * fraction)
+                    let gain = step.map { t >= $0.time ? $0.gain : bleedGain } ?? bleedGain
+                    bleed = gain * (reference[index] * (1 - fraction) + reference[index + 1] * fraction)
                 }
                 sample += bleed + (reverb?.process(bleed) ?? 0)
             }
