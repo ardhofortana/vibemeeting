@@ -1,0 +1,50 @@
+# XcodeGen spec. Generate the Xcode project with:
+#   brew install xcodegen && xcodegen generate
+name: VibeMeeting
+options:
+  bundleIdPrefix: com.ardhofortana
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    majorVersion: 2.0.0
+  VibeCore:
+    path: Packages/VibeCore
+targets:
+  VibeMeeting:
+    type: application
+    platform: macOS
+    sources:
+      - path: VibeMeeting
+        excludes:
+          - "Resources/**"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ardhofortana.VibeMeeting
+        PRODUCT_NAME: VibeMeeting
+        INFOPLIST_FILE: VibeMeeting/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: VibeMeeting/Resources/VibeMeeting.entitlements
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+    dependencies:
+      - package: KeyboardShortcuts
+      - package: VibeCore
+schemes:
+  VibeMeeting:
+    build:
+      targets:
+        VibeMeeting: all
+    run:
+      config: Debug
+    archive:
+      config: Release

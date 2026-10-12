@@ -84,7 +84,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         return false
     }
 
-    static func offset(_ seconds: TimeInterval) -> String {
+    public static func offset(_ seconds: TimeInterval) -> String {
         let total = max(0, Int(seconds))
         let hours = total / 3600
         let minutes = (total % 3600) / 60

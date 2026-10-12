@@ -1,0 +1,151 @@
+import AppKit
+import SwiftUI
+import VibeCore
+
+/// The script to read out loud. The first sentence is bold so the user can
+/// start talking while reading the rest.
+struct ScriptCardView: View {
+    @Environment(MeetingSession.self) private var session
+
+    var body: some View {
+        switch session.replyState {
+        case .idle:
+            EmptyView()
+        case .failed(let message):
+            card {
+                HStack(alignment: .firstTextBaseline) {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                    Text(message).font(.callout)
+                    Spacer()
+                    if session.currentScript != nil, message != "Nothing to reply to yet." {
+                        Button("Try again") { session.retry() }
+                            .controlSize(.small)
+                    }
+                }
+            }
+        case .drafting, .streaming, .done:
+            if let script = session.currentScript {
+                card { content(for: script) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(for script: ReplyScript) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "arrowshape.turn.up.left")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text("“\(script.targetText)”")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.head)
+                Spacer(minLength: 4)
+                tags(for: script)
+                historyMenu
+            }
+
+            if script.text.isEmpty {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Drafting…").foregroundStyle(.secondary)
+                }
+            } else {
+                Self.styled(ScriptText.sanitize(script.text))
+                    .font(.title3)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Button("Regenerate") { session.regenerate() }
+                    .help("New script for the same target (\(Hotkeys.label(.regenerate)))")
+                Button("Shorter") { session.shorter() }
+                    .help("Shorten this script (\(Hotkeys.label(.shorter)))")
+                    .disabled(script.text.isEmpty)
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(ScriptText.sanitize(script.text), forType: .string)
+                }
+                .disabled(script.text.isEmpty)
+                Spacer()
+                if let latency = script.firstTokenLatency {
+                    Text(String(format: "%.1fs", latency))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.tertiary)
+                        .help("Time to first word")
+                }
+            }
+            .controlSize(.small)
+            .disabled(session.replyState == .drafting)
+        }
+    }
+
+    @ViewBuilder
+    private func tags(for script: ReplyScript) -> some View {
+        if script.intent != .auto {
+            Text(script.intent.label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+        }
+        if script.variant != .fresh {
+            Text(script.variant == .shorter ? "Shorter" : "Regenerated").font(.caption2).foregroundStyle(.tertiary)
+        }
+    }
+
+    private var historyMenu: some View {
+        Menu {
+            let scripts = session.record.scripts.suffix(10).reversed()
+            if scripts.isEmpty {
+                Text("No earlier scripts")
+            }
+            ForEach(Array(scripts)) { script in
+                Button {
+                    session.showScript(script)
+                } label: {
+                    Text(String(ScriptText.sanitize(script.text).prefix(70)))
+                }
+            }
+        } label: {
+            Image(systemName: "clock.arrow.circlepath")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Earlier scripts in this meeting")
+    }
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.accentColor.opacity(0.25)))
+            .padding(.horizontal, 10)
+            .padding(.top, 6)
+    }
+
+    /// First sentence in bold, [confirm number] markers highlighted.
+    static func styled(_ text: String) -> Text {
+        let (first, rest) = ScriptText.splitFirstSentence(text)
+        var result = highlighted(first, bold: true)
+        if !rest.isEmpty {
+            result = result + Text(" ") + highlighted(rest, bold: false)
+        }
+        return result
+    }
+
+    private static func highlighted(_ text: String, bold: Bool) -> Text {
+        let parts = text.components(separatedBy: ScriptText.confirmNumberMarker)
+        var result = Text("")
+        for (index, part) in parts.enumerated() {
+            if index > 0 {
+                result = result + Text(ScriptText.confirmNumberMarker)
+                    .font(.callout.weight(.bold))
+                    .foregroundStyle(.orange)
+            }
+            result = result + Text(part).fontWeight(bold ? .semibold : .regular)
+        }
+        return result
+    }
+}

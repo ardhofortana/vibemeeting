@@ -132,7 +132,7 @@ extension Recap {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    static func formatDuration(_ duration: TimeInterval) -> String {
+    public static func formatDuration(_ duration: TimeInterval) -> String {
         let minutes = Int((duration / 60).rounded())
         if minutes < 60 { return "\(max(minutes, 1)) min" }
         let hours = minutes / 60

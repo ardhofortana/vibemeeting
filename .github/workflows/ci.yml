@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: VibeCore tests (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start local SSE server for transport tests
+        run: |
+          apt-get update -qq && apt-get install -y -qq python3 > /dev/null
+          python3 scripts/sse_test_server.py 18777 &
+          sleep 1
+      - name: Test
+        env:
+          VIBE_LOCAL_SSE_URL: http://127.0.0.1:18777
+        run: swift test --package-path Packages/VibeCore
+
+  app:
+    name: App build (macOS 26)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          sw_vers
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Test VibeCore on macOS
+        run: swift test --package-path Packages/VibeCore
+      - name: Build app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project VibeMeeting.xcodeproj \
+            -scheme VibeMeeting \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build.log | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log
