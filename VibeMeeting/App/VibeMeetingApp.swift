@@ -72,6 +72,7 @@ private struct MenuContent: View {
         }
         Button("Open VibeMeeting") { app.windows.showMain() }
             .keyboardShortcut("o")
+        Button("Audio check…") { app.windows.showAudioCheck() }
         Button("Settings…") { app.windows.showSettings() }
             .keyboardShortcut(",")
         Divider()

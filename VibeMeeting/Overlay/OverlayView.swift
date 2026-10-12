@@ -36,6 +36,7 @@ private struct OverlayHeader: View {
     let controller: OverlayController
     @Environment(AppModel.self) private var app
     @Environment(MeetingSession.self) private var session
+    @State private var showingDiagnostics = false
 
     var body: some View {
         @Bindable var settings = app.settings
@@ -77,6 +78,19 @@ private struct OverlayHeader: View {
 
             LevelMeter(level: session.themLevel, label: "Them")
             LevelMeter(level: session.youLevel, label: "You")
+
+            Button {
+                showingDiagnostics.toggle()
+            } label: {
+                Image(systemName: "stethoscope")
+            }
+            .buttonStyle(.borderless)
+            .help("Audio diagnostics")
+            .popover(isPresented: $showingDiagnostics) {
+                DiagnosticsPanel(pipeline: session.pipeline, transcript: session.transcript)
+                    .padding(14)
+                    .frame(width: 600)
+            }
 
             Button {
                 app.windows.showAddContext()

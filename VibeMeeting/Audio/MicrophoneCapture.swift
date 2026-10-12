@@ -18,6 +18,12 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// Called on the main queue after the input device changed and capture restarted.
     var onReconnect: ((Result<Void, Error>) -> Void)?
 
+    private let diagnostics: StreamDiagnostics?
+
+    init(diagnostics: StreamDiagnostics? = nil) {
+        self.diagnostics = diagnostics
+    }
+
     static func requestPermission() async -> Bool {
         await AVAudioApplication.requestRecordPermission()
     }

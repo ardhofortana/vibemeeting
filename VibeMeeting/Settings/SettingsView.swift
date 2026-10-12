@@ -346,6 +346,7 @@ private struct AudioSettings: View {
             }
 
             Section("Permissions") {
+                LabeledContent("System audio permission", value: SystemAudioPermission.status.rawValue)
                 HStack {
                     Button("Allow audio capture") { Task { await prime() } }
                         .disabled(priming)
@@ -354,6 +355,8 @@ private struct AudioSettings: View {
                 if let primeMessage {
                     Text(primeMessage).font(.caption).foregroundStyle(.secondary)
                 }
+                Button("Open Audio check…") { app.windows.showAudioCheck() }
+                    .controlSize(.small)
                 Button("Open Privacy & Security settings") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
                         NSWorkspace.shared.open(url)

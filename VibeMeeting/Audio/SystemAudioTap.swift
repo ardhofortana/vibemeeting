@@ -32,6 +32,12 @@ final class SystemAudioTap: @unchecked Sendable {
     /// True when an app source was requested but none of its processes were found.
     private(set) var fellBackToAllAudio = false
 
+    private let diagnostics: StreamDiagnostics?
+
+    init(diagnostics: StreamDiagnostics? = nil) {
+        self.diagnostics = diagnostics
+    }
+
     func start(source: Source, handler: @escaping BufferHandler) throws {
         self.source = source
         self.handler = handler

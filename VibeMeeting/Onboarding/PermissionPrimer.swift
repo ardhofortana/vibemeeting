@@ -7,15 +7,23 @@ enum PermissionPrimer {
     struct Result {
         var microphone: Bool
         var systemAudio: Bool
+        var systemAudioStatus: SystemAudioPermission.Status
         var speechModel: Bool
         var speechError: String?
 
         var summary: String {
             var parts: [String] = []
             parts.append(microphone ? "Microphone: allowed." : "Microphone: not allowed. Turn it on in System Settings → Privacy & Security → Microphone.")
-            parts.append(systemAudio
-                ? "System audio: requested. If macOS asked, choose Allow."
-                : "System audio: couldn't start. Check System Settings → Privacy & Security → Screen & System Audio Recording.")
+            switch systemAudioStatus {
+            case .authorized:
+                parts.append("System audio: allowed.")
+            case .denied:
+                parts.append("System audio: not allowed. Turn on VibeMeeting under System Settings → Privacy & Security → Screen & System Audio Recording → System Audio Recording Only.")
+            case .unknown:
+                parts.append(systemAudio
+                    ? "System audio: requested. If macOS asked, choose Allow."
+                    : "System audio: couldn't start. Check System Settings → Privacy & Security → Screen & System Audio Recording.")
+            }
             parts.append(speechModel ? "English speech model: ready." : "English speech model: \(speechError ?? "not available").")
             return parts.joined(separator: "\n")
         }
@@ -24,7 +32,8 @@ enum PermissionPrimer {
     static func run() async -> Result {
         let microphone = await MicrophoneCapture.requestPermission()
 
-        // Starting a tap is what makes macOS ask for system audio access.
+        _ = await SystemAudioPermission.request()
+        // Starting a tap also makes macOS ask, if the request above couldn't.
         var systemAudio = true
         let tap = SystemAudioTap()
         do {
@@ -43,6 +52,12 @@ enum PermissionPrimer {
             speechModel = false
             speechError = error.localizedDescription
         }
-        return Result(microphone: microphone, systemAudio: systemAudio, speechModel: speechModel, speechError: speechError)
+        return Result(
+            microphone: microphone,
+            systemAudio: systemAudio,
+            systemAudioStatus: SystemAudioPermission.status,
+            speechModel: speechModel,
+            speechError: speechError
+        )
     }
 }

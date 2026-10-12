@@ -12,6 +12,8 @@ final class AppModel {
     let transport = URLSessionTransport()
     let overlay = OverlayController()
     @ObservationIgnored private(set) lazy var windows = WindowManager(app: self)
+    /// The Audio check window's pipeline, stopped whenever a meeting starts.
+    let audioCheck = AudioCheckModel()
 
     private(set) var records: [MeetingRecord] = []
     private(set) var activeSession: MeetingSession?
@@ -49,6 +51,8 @@ final class AppModel {
         if let activeSession, activeSession.isActive {
             await endMeeting()
         }
+        // Only one capture pipeline at a time.
+        await audioCheck.stop()
         if !MicrophoneCapture.permissionGranted {
             _ = await MicrophoneCapture.requestPermission()
         }

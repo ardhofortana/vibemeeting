@@ -42,7 +42,8 @@ final class MeetingSession: Identifiable {
             case micSilent
             case micUnavailable
             case appAudioNotFound
-            case speechUnavailable
+            case themTranscriptionFailed
+            case youTranscriptionFailed
             case echoCancellationOff
         }
 
@@ -85,12 +86,8 @@ final class MeetingSession: Identifiable {
     private let settings: AppSettings
     private let store: SessionStore
     private let transport: ClaudeTransport
-    private let systemTap = SystemAudioTap()
-    private let mic = MicrophoneCapture()
-    private let themTranscriber = LiveTranscriber(speaker: .them)
-    private let youTranscriber = LiveTranscriber(speaker: .you)
-    private let themMeter = AudioLevelMeter()
-    private let youMeter = AudioLevelMeter()
+    /// Audio capture and transcription for both streams.
+    let pipeline = CapturePipeline()
 
     @ObservationIgnored private var tickTask: Task<Void, Never>?
     @ObservationIgnored private var replyTask: Task<Void, Never>?
@@ -126,20 +123,14 @@ final class MeetingSession: Identifiable {
         listeningSince = Date()
         save()
 
-        do {
-            try await startTranscriber(themTranscriber)
-            try await startTranscriber(youTranscriber)
-        } catch {
-            Log.speech.error("Transcriber failed to start: \(error.localizedDescription, privacy: .public)")
-            addNotice(.speechUnavailable, "On-device English transcription isn't available: \(error.localizedDescription)")
-            status = .failed(error.localizedDescription)
-            return
-        }
-
-        startSystemAudio()
-        startMicrophone()
+        pipeline.onUpdate = { [weak self] update in self?.apply(update) }
+        pipeline.onEvent = { [weak self] event in self?.handle(event) }
+        let source: SystemAudioTap.Source = settings.audioSourceBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
+        await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing))
+        guard status == .starting else { return }
 
         status = .listening
+        listeningSince = Date()
         startTicking()
         warmCache()
     }
@@ -149,10 +140,7 @@ final class MeetingSession: Identifiable {
         status = .ending
         tickTask?.cancel()
         replyTask?.cancel()
-        systemTap.stop()
-        mic.stop()
-        await themTranscriber.stop()
-        await youTranscriber.stop()
+        await pipeline.stop()
         // Let queued recognizer updates land before locking the transcript.
         await Task.yield()
         transcript.finalizeAll()
@@ -165,64 +153,30 @@ final class MeetingSession: Identifiable {
         status = .ended
     }
 
-    private func startTranscriber(_ transcriber: LiveTranscriber) async throws {
-        try await transcriber.start(
-            onUpdate: { [weak self] update in
-                self?.apply(update)
-            },
-            onError: { error in
-                Log.speech.error("Transcriber error: \(error.localizedDescription, privacy: .public)")
-            }
-        )
-    }
+    private static let cantHearMessage = "Can't hear the call. Check that VibeMeeting has audio capture permission, or open Audio check."
+    private static let micMessage = "Can't use the microphone. Check that VibeMeeting has microphone permission."
 
-    private func startSystemAudio() {
-        let source: SystemAudioTap.Source = settings.audioSourceBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
-        let meter = themMeter
-        let transcriber = themTranscriber
-        systemTap.onReconnect = { [weak self] result in self?.handleReconnect(result, notice: .cantHearCall) }
-        do {
-            try systemTap.start(source: source) { buffer in
-                meter.update(with: buffer)
-                transcriber.append(buffer)
-            }
-            if systemTap.fellBackToAllAudio {
-                addNotice(.appAudioNotFound, "The chosen app isn't playing audio yet. Listening to all system audio.")
-            }
-        } catch {
-            Log.audio.error("System audio failed: \(error.localizedDescription, privacy: .public)")
-            addNotice(.cantHearCall, "Can't hear the call. Check that VibeMeeting has audio capture permission.")
-        }
-    }
-
-    private func startMicrophone() {
-        let meter = youMeter
-        let transcriber = youTranscriber
-        mic.onReconnect = { [weak self] result in self?.handleReconnect(result, notice: .micUnavailable) }
-        do {
-            try mic.start(voiceProcessing: settings.voiceProcessing) { buffer in
-                meter.update(with: buffer)
-                transcriber.append(buffer)
-            }
-            if settings.voiceProcessing && !mic.voiceProcessingActive {
-                addNotice(.echoCancellationOff, "Echo cancellation is off for this audio setup. A headset keeps Them and You apart.")
-            }
-        } catch {
-            Log.audio.error("Mic failed: \(error.localizedDescription, privacy: .public)")
-            addNotice(.micUnavailable, "Can't use the microphone. Check that VibeMeeting has microphone permission.")
-        }
-    }
-
-    private func handleReconnect(_ result: Result<Void, Error>, notice: Notice.Kind) {
-        switch result {
-        case .success:
-            removeNotice(notice)
+    private func handle(_ event: CapturePipeline.Event) {
+        switch event {
+        case .transcriberFailed(let speaker, let error):
+            let kind: Notice.Kind = speaker == .them ? .themTranscriptionFailed : .youTranscriptionFailed
+            addNotice(kind, "Transcription for \(speaker.label) stopped: \(error.localizedDescription)")
+        case .systemAudioFailed(let error):
+            if status == .listening { status = .reconnecting }
+            addNotice(.cantHearCall, "\(Self.cantHearMessage) (\(error.localizedDescription))")
+        case .systemAudioReconnected:
+            removeNotice(.cantHearCall)
             if status == .reconnecting { status = .listening }
-        case .failure:
-            status = .reconnecting
-            addNotice(notice, notice == .cantHearCall
-                ? "Can't hear the call. Check that VibeMeeting has audio capture permission."
-                : "Can't use the microphone. Check that VibeMeeting has microphone permission.")
+        case .appAudioNotFound:
+            addNotice(.appAudioNotFound, "The chosen app isn't playing audio yet. Listening to all system audio.")
+        case .micFailed(let error):
+            if status == .listening { status = .reconnecting }
+            addNotice(.micUnavailable, "\(Self.micMessage) (\(error.localizedDescription))")
+        case .micReconnected:
+            removeNotice(.micUnavailable)
+            if status == .reconnecting { status = .listening }
+        case .voiceProcessingUnavailable:
+            addNotice(.echoCancellationOff, "Echo cancellation is off for this audio setup. A headset keeps Them and You apart.")
         }
     }
 
@@ -498,8 +452,8 @@ final class MeetingSession: Identifiable {
 
     private func tick() {
         let now = Date()
-        let them = themMeter.read()
-        let you = youMeter.read()
+        let them = pipeline.themMeter.read()
+        let you = pipeline.youMeter.read()
         themLevel = them.level
         youLevel = you.level
 
@@ -508,7 +462,7 @@ final class MeetingSession: Identifiable {
             let themQuiet = now.timeIntervalSince(them.lastSoundAt ?? listeningSince)
             let youQuiet = now.timeIntervalSince(you.lastSoundAt ?? listeningSince)
             if listenedFor > 60, themQuiet > 60 {
-                addNotice(.cantHearCall, "Can't hear the call. Check that VibeMeeting has audio capture permission.")
+                addNotice(.cantHearCall, Self.cantHearMessage)
             } else if themQuiet < 1 {
                 removeNotice(.cantHearCall)
             }

@@ -22,6 +22,7 @@ final class LiveTranscriber: @unchecked Sendable {
     typealias UpdateHandler = @MainActor @Sendable (TranscriptUpdate) -> Void
 
     let speaker: Speaker
+    let diagnostics: StreamDiagnostics
     private let lock = NSLock()
     private var analyzer: SpeechAnalyzer?
     private var inputContinuation: AsyncStream<AnalyzerInput>.Continuation?
@@ -29,8 +30,9 @@ final class LiveTranscriber: @unchecked Sendable {
     private var resultsTask: Task<Void, Never>?
     private let converter = BufferConverter()
 
-    init(speaker: Speaker) {
+    init(speaker: Speaker, diagnostics: StreamDiagnostics) {
         self.speaker = speaker
+        self.diagnostics = diagnostics
     }
 
     static let preferredLocale = Locale(identifier: "en-US")
@@ -59,15 +61,33 @@ final class LiveTranscriber: @unchecked Sendable {
     }
 
     func start(onUpdate: @escaping UpdateHandler, onError: @escaping @Sendable (Error) -> Void) async throws {
+        let diagnostics = self.diagnostics
+        diagnostics.update { $0.transcriberState = "Checking speech model" }
+        do {
+            try await startAnalyzer(onUpdate: onUpdate, onError: onError)
+        } catch {
+            diagnostics.update {
+                $0.transcriberState = "Failed to start"
+                $0.lastError = String(describing: error)
+            }
+            throw error
+        }
+    }
+
+    private func startAnalyzer(onUpdate: @escaping UpdateHandler, onError: @escaping @Sendable (Error) -> Void) async throws {
+        let diagnostics = self.diagnostics
         let transcriber = try await Self.makeTranscriber()
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            diagnostics.update { $0.transcriberState = "Downloading speech model" }
             try await request.downloadAndInstall()
         }
 
+        diagnostics.update { $0.transcriberState = "Starting analyzer" }
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             throw Failure.noAudioFormat
         }
+        diagnostics.update { $0.analyzerFormat = StreamDiagnostics.describe(format) }
         try await analyzer.prepareToAnalyze(in: format)
 
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(256))
@@ -76,11 +96,20 @@ final class LiveTranscriber: @unchecked Sendable {
             do {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters)
+                    diagnostics.update {
+                        if result.isFinal { $0.finalResults += 1 } else { $0.volatileResults += 1 }
+                        $0.lastResultAt = Date()
+                    }
                     // Awaiting keeps volatile and final results in order.
                     await onUpdate(TranscriptUpdate(speaker: speaker, kind: result.isFinal ? .final : .volatile, text: text))
                 }
+                diagnostics.update { $0.transcriberState = "Finished" }
             } catch is CancellationError {
             } catch {
+                diagnostics.update {
+                    $0.transcriberState = "Stopped with an error"
+                    $0.lastError = String(describing: error)
+                }
                 onError(error)
             }
         }
@@ -92,6 +121,7 @@ final class LiveTranscriber: @unchecked Sendable {
             self.analyzerFormat = format
             self.inputContinuation = continuation
         }
+        diagnostics.update { $0.transcriberState = "Running" }
         Log.speech.info("Transcriber started for \(speaker.rawValue, privacy: .public)")
     }
 
@@ -104,10 +134,21 @@ final class LiveTranscriber: @unchecked Sendable {
         lock.unlock()
         guard let format, let continuation else { return }
         do {
-            let converted = try converter.convert(buffer, to: format)
+            guard let converted = try converter.convert(buffer, to: format) else { return }
             continuation.yield(AnalyzerInput(buffer: converted))
+            diagnostics.update {
+                $0.buffersToAnalyzer += 1
+                $0.framesToAnalyzer += Int(converted.frameLength)
+            }
         } catch {
-            Log.speech.error("Audio conversion failed: \(String(describing: error), privacy: .public)")
+            let detail = String(describing: error)
+            diagnostics.update {
+                $0.conversionFailures += 1
+                $0.lastConversionError = detail
+            }
+            if diagnostics.read().conversionFailures == 1 {
+                Log.speech.error("Audio conversion failed: \(detail, privacy: .public)")
+            }
         }
     }
 

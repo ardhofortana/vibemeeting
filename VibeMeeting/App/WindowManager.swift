@@ -37,6 +37,12 @@ final class WindowManager: NSObject, NSWindowDelegate {
         }
     }
 
+    func showAudioCheck() {
+        show(id: "audio-check", title: "Audio check", size: CGSize(width: 720, height: 560), minSize: CGSize(width: 620, height: 480)) {
+            AudioCheckView()
+        }
+    }
+
     func showWelcome() {
         show(id: "welcome", title: "Welcome to VibeMeeting", size: CGSize(width: 520, height: 600), minSize: CGSize(width: 480, height: 540)) {
             WelcomeView()
