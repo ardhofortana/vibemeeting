@@ -94,11 +94,12 @@ Mic ───────────► AVAudioEngine + voice processing ──
                                              Overlay (NSPanel non-activating)
 ```
 
-Audio tidak pernah ditulis ke disk dan tidak pernah keluar dari Mac. Yang dikirim ke Claude hanya teks: jendela transkrip terbaru, konteks, dan instruksi.
+Audio tidak pernah ditulis ke disk dan tidak pernah keluar dari Mac. Yang dikirim ke Claude hanya teks: transkrip meeting, konteks, dan instruksi.
 
 ```
 Packages/VibeCore/        Logika lintas platform, dites di Linux & macOS
-  Transcript/             Pengelompokan giliran, target Reply, filter echo
+  Transcript/             Pengelompokan giliran, target Reply, filter echo teks
+  Audio/                  EchoGate: meredam suara lawan bicara yang bocor dari speaker ke mic
   Prompt/                 Aturan output, susunan prompt berlapis dengan cache
   Claude/                 Klien HTTP + SSE streaming (tidak ada SDK Swift resmi)
   Recap/                  Rekap terstruktur (JSON schema), dipecah untuk meeting panjang
@@ -114,12 +115,15 @@ project.yml               Spesifikasi XcodeGen
 
 ### Prompt & latensi
 
-Setiap Reply adalah satu panggilan streaming. Prompt disusun dari bagian paling statis ke paling dinamis, dengan tiga cache breakpoint:
+Setiap Reply adalah satu panggilan streaming. Prompt disusun dari bagian paling statis ke paling dinamis, dengan empat cache breakpoint:
 
 1. Aturan output + About me (`system`) ← cache
 2. Konteks meeting (teks + screenshot) ← cache
 3. Gaya (preset + instruksi meeting) ← cache
-4. Jendela transkrip terbaru + target + intent + Steer (tidak di-cache)
+4. Transkrip lama, per potongan 12 giliran yang sudah selesai ← cache di potongan terakhir
+5. Giliran terbaru + target + intent + Steer (tidak di-cache)
+
+Jadi Reply melihat seluruh meeting, bukan cuma beberapa kalimat terakhir. Script menjawab hal terakhir yang mereka katakan dulu, lalu menanggapi pertanyaan atau poin sebelumnya yang belum terjawab. Potongan transkrip yang sudah selesai tidak pernah berubah, jadi Reply berikutnya membaca cache dari Reply sebelumnya dan hanya menulis potongan baru. Meeting yang sangat panjang (lebih dari ±60.000 karakter transkrip lama) membuang potongan paling awal.
 
 Cache dipanaskan dengan request `max_tokens: 0` saat **Start listening** dan dijaga tetap hangat setiap ±4,5 menit selama meeting. Mengganti preset atau menambah konteks hanya menulis ulang bagian setelahnya.
 
@@ -128,7 +132,10 @@ Cache dipanaskan dengan request `max_tokens: 0` saat **Start listening** dan dij
 - **Model.** Reply memakai **Claude Haiku 5.5** dengan thinking dimatikan, karena PRD meminta model tercepat untuk Reply. Rekap memakai **Claude Opus 5.5** dengan server-side refusal fallback. Keduanya bisa diganti di Settings, dan pilihan finalnya ditentukan dari hasil `vibe-latency`. Dengan Haiku, biayanya jauh di bawah target US$1 per jam.
 - **Penyimpanan memakai file JSON, bukan SwiftData.** Satu file per meeting di `~/Library/Application Support/VibeMeeting/Sessions`. Alasannya: bisa dites di luar Mac, mudah dibaca, tidak perlu migrasi skema, dan hapus berarti file benar-benar terhapus.
 - **Hide from screen sharing.** Apple sekarang menganggap `NSWindow.sharingType = .none` sebagai legacy, dan screen share berbasis ScreenCaptureKit di macOS 15+ bisa tetap menangkap overlay. Opsinya tetap ada (default menyala), tapi sembunyikan overlay dengan ⌥H sebelum share screen.
-- **Echo cancellation default mati.** Voice processing macOS mengecilkan volume semua app lain (termasuk call-nya) dan bisa membuat mic app call jadi lebih pelan. Sebagai gantinya, `EchoFilter` membuang teks **You** yang hampir identik dengan ucapan **Them** beberapa detik sebelumnya. Kalau dinyalakan di Settings → Audio, app memakainya kecuali output-nya headphone Bluetooth/AirPods atau headset USB. Port headphone 3.5 mm tetap dianggap bisa ke speaker (di Mac mini macOS menyebutnya "External Headphones" walau yang terpasang speaker). Kalau gagal, app otomatis kembali ke mic biasa dan menampilkan alasannya di overlay. Pakai speaker tanpa echo cancellation berarti suara lawan bicara bisa ikut masuk ke **You**; `EchoFilter` hanya menangkap pengulangan bahasa Inggris yang hampir sama persis, dan hanya saat **Them** juga tertranskripsi. Dengan voice processing, macOS memecah audio mic jadi beberapa channel dan suara yang sudah diproses ada di channel 0, jadi app mengambil channel itu saja.
+- **Suara lawan bicara yang bocor ke mic (pakai speaker).** Dua lapis pertahanan, keduanya aktif secara default:
+  - `EchoGate` membandingkan pola level suara mic dengan audio call. Kalau mic hanya berisi suara mereka yang keluar dari speaker, bagian itu dibisukan untuk transkripsi **You** saja; call-nya tidak terpengaruh. Kalau kamu bicara bersamaan, suaramu lebih keras dari perkiraan bocoran, jadi tetap lolos. Bisa dimatikan di Settings → Audio → **Remove the call's voice from my mic**. Statusnya (lag, level, berapa detik dibisukan) ada di Audio check dan di report.
+  - `EchoFilter` membuang teks **You** yang hampir sama dengan ucapan **Them**, termasuk kata yang salah dengar satu-dua huruf. Teks live yang meniru **Them** tidak ditampilkan, dan baris **You** yang selesai lebih dulu dihapus begitu teks **Them** yang sama datang.
+- **Echo cancellation default mati.** Voice processing macOS mengecilkan volume semua app lain (termasuk call-nya) dan bisa membuat mic app call jadi lebih pelan. Kalau dinyalakan di Settings → Audio, app memakainya kecuali output-nya headphone Bluetooth/AirPods atau headset USB. Port headphone 3.5 mm tetap dianggap bisa ke speaker (di Mac mini macOS menyebutnya "External Headphones" walau yang terpasang speaker). Kalau gagal, app otomatis kembali ke mic biasa dan menampilkan alasannya di overlay. Dengan voice processing, macOS memecah audio mic jadi beberapa channel dan suara yang sudah diproses ada di channel 0, jadi app mengambil channel itu saja.
 - **Hotkey hanya aktif selama meeting**, supaya ⌥Space tetap berfungsi normal di app lain.
 - **Pre-draft** (eksperimen opsional M3) belum dibuat.
 - **Distribusi** (Developer ID + notarization) belum di-setup. Untuk pemakaian pribadi, Run dari Xcode sudah cukup, asalkan Team sudah dipilih dan disimpan (lihat Build & jalankan).

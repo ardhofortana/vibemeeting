@@ -31,6 +31,7 @@ final class AppSettings {
         static let compactOverlay = "compactOverlay"
         static let audioSourceBundleID = "audioSourceBundleID"
         static let voiceProcessing = "voiceProcessing"
+        static let echoGate = "suppressSpeakerBleed"
         static let onboarded = "hasCompletedOnboarding"
     }
 
@@ -50,6 +51,8 @@ final class AppSettings {
     var audioSourceBundleID: String? { didSet { defaults.set(audioSourceBundleID, forKey: Key.audioSourceBundleID) } }
     /// Echo cancellation on the mic (Apple voice processing).
     var voiceProcessing: Bool { didSet { defaults.set(voiceProcessing, forKey: Key.voiceProcessing) } }
+    /// Mute the mic where it only carries the call's voice from the speakers.
+    var suppressSpeakerBleed: Bool { didSet { defaults.set(suppressSpeakerBleed, forKey: Key.echoGate) } }
     var hasCompletedOnboarding: Bool { didSet { defaults.set(hasCompletedOnboarding, forKey: Key.onboarded) } }
 
     /// Mirrors whether a key is stored, so views update when it changes.
@@ -76,6 +79,7 @@ final class AppSettings {
         // and can lower the call app's own mic input. Turned on, it's skipped only with
         // Bluetooth or USB headphones (the headphone jack may drive speakers).
         voiceProcessing = defaults.object(forKey: Key.voiceProcessing) as? Bool ?? false
+        suppressSpeakerBleed = defaults.object(forKey: Key.echoGate) as? Bool ?? true
         hasCompletedOnboarding = defaults.bool(forKey: Key.onboarded)
         hasAPIKey = !(KeychainStore.read(account: KeychainStore.apiKeyAccount) ?? "").isEmpty
     }

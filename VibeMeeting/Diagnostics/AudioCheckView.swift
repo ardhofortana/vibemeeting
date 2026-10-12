@@ -44,7 +44,7 @@ final class AudioCheckModel {
         pipeline.onEvent = { [weak self] event in self?.events.append(Self.describe(event)) }
         self.pipeline = pipeline
         let source: SystemAudioTap.Source = settings.audioSourceBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
-        await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing))
+        await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing, echoGate: settings.suppressSpeakerBleed))
         guard run == runID else {
             // stop() ran while starting (e.g. a meeting began): tear down what started.
             await pipeline.stop()
@@ -228,6 +228,9 @@ struct DiagnosticsPanel: View {
                 row("Format", snapshot.sourceFormat)
                 if !snapshot.channelPeakRMS.isEmpty {
                     row("Channels", snapshot.channelPeakRMS.map { String(format: "%.3f", $0) }.joined(separator: " "))
+                }
+                if speaker == .you {
+                    row("Bleed gate", pipeline.echoGateSummary)
                 }
                 if snapshot.tracksNonZero {
                     row("Non-zero", snapshot.secondsSinceNonZero.map { String(format: "last %.1fs ago", $0) } ?? "never: only exact zeros")

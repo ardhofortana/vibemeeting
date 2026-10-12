@@ -337,8 +337,12 @@ private struct AudioSettings: View {
             }
 
             Section {
+                Toggle("Remove the call's voice from my mic", isOn: $settings.suppressSpeakerBleed)
+                Text("With speakers, your mic also hears the other side, which shows up twice in the subtitles. This mutes the mic for \"You\" only where it carries nothing but their voice, by comparing it with the call's audio. Your own words still go through when you talk over them. Doesn't affect the call itself.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("Echo cancellation", isOn: $settings.voiceProcessing)
-                Text("Apple's echo cancellation: removes the call's sound coming from your speakers (including speakers on the headphone jack) from your mic. Skipped with Bluetooth headphones, AirPods and USB headsets. While it runs, macOS turns other apps down (the call too), and the call app's mic may get quieter.")
+                Text("Apple's echo cancellation: removes the call's sound coming from your speakers (including speakers on the headphone jack) more thoroughly than the option above. Skipped with Bluetooth headphones, AirPods and USB headsets. While it runs, macOS turns other apps down (the call too), and the call app's mic may get quieter.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {

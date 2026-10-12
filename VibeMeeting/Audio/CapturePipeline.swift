@@ -32,12 +32,16 @@ final class CapturePipeline {
     struct Configuration {
         var source: SystemAudioTap.Source
         var voiceProcessing: Bool
+        /// Silence the mic where it only carries the call's voice from the speakers.
+        var echoGate: Bool = true
     }
 
     let themDiagnostics = StreamDiagnostics(name: "Them (system audio)")
     let youDiagnostics = StreamDiagnostics(name: "You (microphone)")
     let themMeter = AudioLevelMeter()
     let youMeter = AudioLevelMeter()
+    /// Uses the call's audio as the reference to find it in the mic.
+    let echoGate = EchoGate()
 
     private let systemTap: SystemAudioTap
     private let mic: MicrophoneCapture
@@ -72,12 +76,13 @@ final class CapturePipeline {
         await startTranscriber(youTranscriber)
         guard isRunning else { return }
 
+        echoGate.reset()
         await startSystemAudio(configuration.source)
         guard isRunning else {
             await systemTap.stop()
             return
         }
-        startMicrophone(voiceProcessing: configuration.voiceProcessing)
+        startMicrophone(voiceProcessing: configuration.voiceProcessing, echoGate: configuration.echoGate)
     }
 
     func stop() async {
@@ -102,6 +107,7 @@ final class CapturePipeline {
             "mic route: \(mic.routeSummary)",
             "voice processing active: \(mic.voiceProcessingActive)",
             "voice processing off because: \(mic.voiceProcessingOffReason ?? "–")",
+            "speaker bleed gate: \(echoGateSummary)",
         ]
         for diagnostics in [themDiagnostics, youDiagnostics] {
             lines.append("")
@@ -117,6 +123,20 @@ final class CapturePipeline {
         let environment = await AudioEnvironment.boundedReport()
         return (environment + extra + streams).joined(separator: "\n")
     }
+
+    /// "on, coupled: lag 42 ms, -21 dB, r 0.83; muted 12.3 s of 300.0 s".
+    var echoGateSummary: String {
+        guard echoGateEnabled else { return "off" }
+        let stats = echoGate.stats
+        var coupling = "no speaker bleed found"
+        if stats.isCoupled, let lag = stats.lagSeconds, let gain = stats.couplingGainDB {
+            coupling = String(format: "bleed found: lag %.0f ms, %.0f dB", lag * 1000, gain)
+            if let r = stats.correlation { coupling += String(format: ", r %.2f", r) }
+        }
+        return coupling + String(format: "; muted %.1f s of %.1f s", stats.gatedSeconds, stats.processedSeconds)
+    }
+
+    private var echoGateEnabled = false
 
     // MARK: - Private
 
@@ -146,6 +166,7 @@ final class CapturePipeline {
         let transcriber = themTranscriber
         let processing = systemProcessing
         let tap = systemTap
+        let gate = echoGate
         tap.onReconnect = { [weak self] result, willRetry in
             switch result {
             case .success: self?.onEvent?(.systemAudioReconnected)
@@ -163,10 +184,11 @@ final class CapturePipeline {
         }
         // Runs on the Core Audio IO thread with a buffer the tap already copied:
         // hand it on and return. The serial queue keeps the order.
-        let handler: SystemAudioTap.BufferHandler = { buffer, _ in
+        let handler: SystemAudioTap.BufferHandler = { buffer, hostTime in
             let owned = OwnedBuffer(buffer: buffer)
             processing.async {
                 diagnostics.recordCapture(owned.buffer, rms: meter.update(with: owned.buffer))
+                Self.feedReference(owned.buffer, hostTime: hostTime, to: gate)
                 transcriber.append(owned.buffer)
             }
         }
@@ -187,10 +209,12 @@ final class CapturePipeline {
         }
     }
 
-    private func startMicrophone(voiceProcessing: Bool) {
+    private func startMicrophone(voiceProcessing: Bool, echoGate useGate: Bool) {
         let meter = youMeter
         let diagnostics = youDiagnostics
         let transcriber = youTranscriber
+        let gate = useGate ? echoGate : nil
+        echoGateEnabled = useGate
         mic.onReconnect = { [weak self] result in
             switch result {
             case .success: self?.onEvent?(.micReconnected)
@@ -207,8 +231,16 @@ final class CapturePipeline {
         do {
             diagnostics.update { $0.captureState = "Starting" }
             // Buffers arrive mono (channel 0 with echo cancellation, live channels
-            // averaged without), so the meter shows exactly what speech gets.
-            try mic.start(voiceProcessing: voiceProcessing) { buffer, _ in
+            // averaged without) and owned, so the gate can work in place and the
+            // meter shows exactly what speech gets.
+            try mic.start(voiceProcessing: voiceProcessing) { buffer, hostTime in
+                if let gate, let samples = buffer.floatChannelData?[0] {
+                    gate.process(
+                        UnsafeMutableBufferPointer(start: samples, count: Int(buffer.frameLength)),
+                        sampleRate: buffer.format.sampleRate,
+                        startTime: AVAudioTime.seconds(forHostTime: hostTime)
+                    )
+                }
                 diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
                 transcriber.append(buffer)
             }
@@ -219,6 +251,19 @@ final class CapturePipeline {
                 $0.lastError = String(describing: error)
             }
             onEvent?(.micFailed(error))
+        }
+    }
+}
+
+extension CapturePipeline {
+    /// The call's audio, folded to mono, as the gate's reference.
+    nonisolated static func feedReference(_ buffer: AVAudioPCMBuffer, hostTime: UInt64, to gate: EchoGate) {
+        let start = AVAudioTime.seconds(forHostTime: hostTime)
+        let rate = buffer.format.sampleRate
+        if buffer.format.channelCount == 1, !buffer.format.isInterleaved, let samples = buffer.floatChannelData?[0] {
+            gate.addReference(UnsafeBufferPointer(start: samples, count: Int(buffer.frameLength)), sampleRate: rate, startTime: start)
+        } else if let mono = MonoMixer.mix(buffer, fold: .average), let samples = mono.floatChannelData?[0] {
+            gate.addReference(UnsafeBufferPointer(start: samples, count: Int(mono.frameLength)), sampleRate: rate, startTime: start)
         }
     }
 }

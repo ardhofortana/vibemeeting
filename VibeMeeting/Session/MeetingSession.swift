@@ -149,7 +149,7 @@ final class MeetingSession: Identifiable {
         pipeline.onEvent = { [weak self] event in self?.handle(event) }
         tappedBundleID = settings.audioSourceBundleID
         let source: SystemAudioTap.Source = tappedBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
-        await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing))
+        await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing, echoGate: settings.suppressSpeakerBleed))
         guard status == .starting else { return }
 
         status = .listening
