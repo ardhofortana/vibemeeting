@@ -73,7 +73,8 @@ final class AppSettings {
         compactOverlay = defaults.bool(forKey: Key.compactOverlay)
         audioSourceBundleID = defaults.string(forKey: Key.audioSourceBundleID)
         // Off by default: macOS voice processing ducks every other app (the call too)
-        // and can lower the call app's own mic input. Turned on, it only runs on speakers.
+        // and can lower the call app's own mic input. Turned on, it's skipped only with
+        // Bluetooth or USB headphones (the headphone jack may drive speakers).
         voiceProcessing = defaults.object(forKey: Key.voiceProcessing) as? Bool ?? false
         hasCompletedOnboarding = defaults.bool(forKey: Key.onboarded)
         hasAPIKey = !(KeychainStore.read(account: KeychainStore.apiKeyAccount) ?? "").isEmpty

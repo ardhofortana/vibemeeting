@@ -25,9 +25,13 @@ final class StreamDiagnostics: @unchecked Sendable {
         /// voice processing on, channel 0 should be the processed voice.
         var channelPeakRMS: [Float] = []
         var lastSoundAt: Date?
-        /// Seconds since the source last delivered a non-zero sample (system tap).
-        /// Climbing while a call plays = macOS hands this build digital silence.
+        /// When capture first carried clearly audible audio (RMS above speech level).
+        var firstLoudCaptureAt: Date?
+        /// Seconds since the source last delivered a non-zero sample (system tap,
+        /// across rebuilds). nil while a call plays = macOS hands this build silence.
         var secondsSinceNonZero: Double?
+        /// One app is chosen as the source and it's silent while another app plays.
+        var chosenAppIdle = false
         /// True for streams that track non-zero samples (the system tap).
         var tracksNonZero = false
         var rebuilds = 0
@@ -84,6 +88,9 @@ final class StreamDiagnostics: @unchecked Sendable {
             }
             if rms > snapshot.peakRMS { snapshot.peakRMS = rms }
             if rms > AudioLevelMeter.silenceRMS { snapshot.lastSoundAt = Date() }
+            if rms > LiveTranscriber.speechLevelRMS, snapshot.firstLoudCaptureAt == nil {
+                snapshot.firstLoudCaptureAt = Date()
+            }
         }
     }
 
@@ -125,18 +132,34 @@ extension StreamDiagnostics.Snapshot {
             return captureState.hasPrefix("Failed") ? "Capture failed to start" : "Capture: no buffers yet"
         }
         if peakRMS <= AudioLevelMeter.silenceRMS {
-            return "Capture: only digital silence (permission, or wrong mic channel)"
+            if tracksNonZero && secondsSinceNonZero == nil {
+                return "Capture: only exact zeros so far (nothing playing yet, or no permission)"
+            }
+            return "Capture: only silence so far (nothing playing, or wrong mic channel)"
+        }
+        if transcriberState == "Stopped with an error" || transcriberState == "Ended unexpectedly" {
+            return "Speech stopped (\(transcriberState.lowercased())); see the error below"
         }
         if buffersToAnalyzer == 0 {
             return conversionFailures > 0 ? "Conversion fails before speech" : "Nothing reaches speech (\(transcriberState))"
         }
-        if analyzerPeakRMS <= AudioLevelMeter.silenceRMS {
+        if lostInConversion() {
             return "Speech only receives silence (lost in conversion)"
         }
         if volatileResults + finalResults == 0 && speechLevelChunks >= 50 {
             return "Speech hears speech but returns no words (language? model?)"
         }
         return nil
+    }
+
+    /// Capture has carried clearly audible audio for over 2 s (far longer than the
+    /// ≤100 ms chunking and resampler delay), yet speech got almost none of it.
+    /// The 40 dB margin covers 10 ms vs 100 ms windows, the 8 kHz low-pass and
+    /// the L/R average.
+    func lostInConversion(now: Date = Date()) -> Bool {
+        guard let first = firstLoudCaptureAt, now.timeIntervalSince(first) > 2,
+              buffersToAnalyzer > 0 else { return false }
+        return analyzerPeakRMS < peakRMS * 0.01
     }
 
     /// Plain-text lines for the copyable report.
@@ -158,6 +181,7 @@ extension StreamDiagnostics.Snapshot {
             "  raw channel peaks: \(channels)",
             "  last non-zero sample: \(nonZero)",
             "  rebuilds \(rebuilds), last reason: \(lastRebuildReason ?? "–"), problem: \(problem ?? "none")",
+            "  chosen app idle while another app plays: \(chosenAppIdle)",
             "transcriber: \(transcriberState)",
             "  analyzer format \(analyzerFormat)",
             "  to analyzer: chunks \(buffersToAnalyzer), frames \(framesToAnalyzer), speech-level \(speechLevelChunks), dropped \(droppedChunks), conversion failures \(conversionFailures)",

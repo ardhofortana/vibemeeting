@@ -27,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard app.activeSession?.isActive == true else { return .terminateNow }
+        // Still set while a meeting is ending, so Quit waits for its save too.
+        guard app.activeSession != nil else { return .terminateNow }
         // Save the transcript before quitting mid-meeting.
         Task {
             await app.endMeeting(thenRecap: false)
@@ -67,6 +68,9 @@ private struct MenuContent: View {
             }
             Divider()
         } else {
+            if let session = app.activeSession {
+                Text("Saving \(session.record.displayName)…")
+            }
             Button("New meeting") { app.windows.showNewMeeting() }
                 .keyboardShortcut("n")
         }

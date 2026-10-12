@@ -6,12 +6,13 @@ import Foundation
 /// Float32 copy at the input's sample rate, so the "You" meter shows exactly
 /// what speech recognition gets.
 ///
-/// Apple voice processing (echo cancellation) is only tried where it helps and
-/// is known to work: sound coming out of speakers, not headphones, and not a
-/// Bluetooth mic with other speakers (that pairing fails with -10875). It falls
-/// back to a plain mic when it fails to start, delivers no audio, or its
-/// processed channel stays digitally silent. A route that failed once is not
-/// retried during this capture session.
+/// Apple voice processing (echo cancellation) is skipped where it can't help or
+/// is known to fail: Bluetooth or USB headphones, and a Bluetooth mic with other
+/// speakers (that pairing fails with -10875). The headphone jack counts as
+/// speakers, because it reports the same whether headphones or speakers are
+/// plugged in. It falls back to a plain mic when it fails to start, delivers no
+/// audio, or its processed channel stays digitally silent. A route that failed
+/// once is not retried during this capture session.
 final class MicrophoneCapture: @unchecked Sendable {
     typealias BufferHandler = @Sendable (AVAudioPCMBuffer) -> Void
 
@@ -39,6 +40,9 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var handler: BufferHandler?
     private var wantsVoiceProcessing = false
     private var configurationObserver: NSObjectProtocol?
+    private var defaultInputListener: AudioObjectPropertyListenerBlock?
+    /// The skip reason last announced, so a restart on the same route stays quiet.
+    private var announcedSkip: String?
     private var pendingRestart: DispatchWorkItem?
     private var restartTimes: [Date] = []
     /// Bumped on every engine start, so stale health checks do nothing.
@@ -61,6 +65,8 @@ final class MicrophoneCapture: @unchecked Sendable {
     var onReconnect: ((Result<Void, Error>) -> Void)?
     /// Main queue. Echo cancellation was asked for but had to be turned off.
     var onVoiceProcessingFallback: ((String) -> Void)?
+    /// Main queue. Echo cancellation was asked for but isn't used on this route.
+    var onVoiceProcessingSkipped: ((String) -> Void)?
 
     init(diagnostics: StreamDiagnostics? = nil) {
         self.diagnostics = diagnostics
@@ -80,8 +86,12 @@ final class MicrophoneCapture: @unchecked Sendable {
         wantsVoiceProcessing = voiceProcessing
         brokenRoutes = []
         restartTimes = []
-        try startChoosingMode()
+        announcedSkip = nil
+        // Watch before the first attempt: if it fails (no mic yet, device busy), a
+        // mic appearing later still starts capture.
         observeConfigurationChanges()
+        observeDefaultInput()
+        try startChoosingMode()
     }
 
     /// Call on the main thread.
@@ -90,6 +100,12 @@ final class MicrophoneCapture: @unchecked Sendable {
             NotificationCenter.default.removeObserver(configurationObserver)
         }
         configurationObserver = nil
+        if let block = defaultInputListener {
+            var address = AudioObjectID.systemObject.address(kAudioHardwarePropertyDefaultInputDevice)
+            // Removal only matches the very same block and queue.
+            AudioObjectRemovePropertyListenerBlock(.systemObject, &address, .main, block)
+            defaultInputListener = nil
+        }
         teardown()
         handler = nil
         generation += 1
@@ -106,8 +122,13 @@ final class MicrophoneCapture: @unchecked Sendable {
         var tryVoiceProcessing = false
         if wantsVoiceProcessing {
             if let reason = AudioRoute.reasonToSkipVoiceProcessing(route) {
-                // Not a failure: no speaker echo to cancel, or a pairing known to fail.
+                // Not a failure, but the user turned it on, so say why it's off.
                 voiceProcessingOffReason = reason
+                if announcedSkip != reason {
+                    announcedSkip = reason
+                    let callback = onVoiceProcessingSkipped
+                    DispatchQueue.main.async { callback?(reason) }
+                }
             } else if let key = route?.key, brokenRoutes.contains(key) {
                 voiceProcessingOffReason = "Echo cancellation failed earlier on these devices"
             } else {
@@ -293,6 +314,25 @@ final class MicrophoneCapture: @unchecked Sendable {
         ) { [weak self] notification in
             guard let self, (notification.object as? AVAudioEngine) === self.engine, self.handler != nil else { return }
             self.scheduleRestart()
+        }
+    }
+
+    /// The default input changed (a mic was plugged in or chosen). Unlike the
+    /// engine notification, this fires even when no engine runs: the first start
+    /// failed, or a restart found no input device.
+    private func observeDefaultInput() {
+        guard defaultInputListener == nil else { return }
+        var address = AudioObjectID.systemObject.address(kAudioHardwarePropertyDefaultInputDevice)
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self, self.handler != nil else { return }
+            // Same debounce as the engine notification; the two coalesce.
+            self.scheduleRestart()
+        }
+        let status = AudioObjectAddPropertyListenerBlock(.systemObject, &address, .main, block)
+        if status == noErr {
+            defaultInputListener = block
+        } else {
+            Log.audio.error("Couldn't watch the default input device: \(status)")
         }
     }
 
@@ -510,8 +550,14 @@ struct AudioRoute {
     static func reasonToSkipVoiceProcessing(_ route: AudioRoute?) -> String? {
         guard let route else { return "Couldn't read the audio devices" }
         let bluetooth: Set<UInt32> = [kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE]
-        if bluetooth.contains(route.outputTransport) || route.outputIsHeadphones {
-            return "Headphones in use, so there's no speaker echo to cancel"
+        if bluetooth.contains(route.outputTransport) {
+            return "Bluetooth headphones in use, so there's no speaker echo to cancel"
+        }
+        // The built-in headphone jack reports 'hdpn' whatever is plugged in (macOS
+        // calls it "External Headphones" with speakers too, common on a Mac mini),
+        // so only a USB headset's headphone flag means there are no speakers.
+        if route.outputIsHeadphones && route.outputTransport != kAudioDeviceTransportTypeBuiltIn {
+            return "Headset in use, so there's no speaker echo to cancel"
         }
         if bluetooth.contains(route.inputTransport) {
             // AirPods mic + Mac speakers: voice processing fails with -10875.

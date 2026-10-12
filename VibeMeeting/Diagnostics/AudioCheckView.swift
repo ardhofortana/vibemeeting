@@ -18,9 +18,14 @@ final class AudioCheckModel {
     private(set) var transcript = TranscriptStore()
     private(set) var events: [String] = []
     private(set) var pipeline: CapturePipeline?
+    /// Bumped by start and stop, so a start waiting on a permission prompt gives up
+    /// when stopped meanwhile (window closed, meeting started).
+    @ObservationIgnored private var runID = 0
 
     func start(settings: AppSettings) async {
         guard state == .idle else { return }
+        runID &+= 1
+        let run = runID
         state = .starting
         transcript = TranscriptStore()
         events = []
@@ -32,6 +37,7 @@ final class AudioCheckModel {
         if !MicrophoneCapture.permissionGranted {
             _ = await MicrophoneCapture.requestPermission()
         }
+        guard run == runID else { return }
 
         let pipeline = CapturePipeline()
         pipeline.onUpdate = { [weak self] update in self?.transcript.apply(update) }
@@ -39,27 +45,36 @@ final class AudioCheckModel {
         self.pipeline = pipeline
         let source: SystemAudioTap.Source = settings.audioSourceBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
         await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing))
-        // stop() may have run while starting (e.g. a meeting began); don't come back to life.
-        guard state == .starting, self.pipeline === pipeline else { return }
+        guard run == runID else {
+            // stop() ran while starting (e.g. a meeting began): tear down what started.
+            await pipeline.stop()
+            return
+        }
         state = .running
     }
 
     func stop() async {
-        guard let pipeline, state != .idle else { return }
-        await pipeline.stop()
+        guard state != .idle else { return }
+        runID &+= 1
+        await pipeline?.stop()
+        // After teardown, so Start check can't run on top of it.
         state = .idle
     }
 
     static func describe(_ event: CapturePipeline.Event) -> String {
         switch event {
         case .transcriberFailed(let speaker, let error): return "Transcriber \(speaker.label) failed: \(LiveTranscriber.describe(error))"
-        case .systemAudioFailed(let error): return "System audio failed: \(String(describing: error))"
+        case .systemAudioFailed(let error, let willRetry):
+            return "System audio failed\(willRetry ? " (retrying)" : ""): \(String(describing: error))"
         case .systemAudioProblem(let problem): return MeetingSession.message(for: problem)
-        case .systemAudioReconnected: return "System audio reconnected"
+        case .systemAudioProblemCleared(let problem): return "Cleared: \(problem)"
+        case .systemAudioReconnected: return "System audio tap rebuilt after a failure"
         case .appAudioNotFound: return "Chosen app not playing; using all system audio"
+        case .appAudioFound: return "Chosen app found; listening to it only"
         case .micFailed(let error): return "Microphone failed: \(String(describing: error))"
         case .micReconnected: return "Microphone reconnected"
         case .voiceProcessingUnavailable(let reason): return "Echo cancellation off: \(reason)"
+        case .voiceProcessingSkipped(let reason): return "Echo cancellation not used: \(reason)"
         }
     }
 }

@@ -9,14 +9,22 @@ import VibeCore
 final class CapturePipeline {
     enum Event {
         case transcriberFailed(Speaker, Error)
-        case systemAudioFailed(Error)
+        /// System audio couldn't start or be rebuilt; `willRetry` when another attempt is scheduled.
+        case systemAudioFailed(Error, willRetry: Bool)
         case systemAudioProblem(SystemAudioTap.Problem)
+        /// A reported problem is over: sound or readable IO is back.
+        case systemAudioProblemCleared(SystemAudioTap.Problem)
+        /// A rebuild succeeded after failing.
         case systemAudioReconnected
         case appAudioNotFound
+        /// The chosen app has audio processes again and is tapped on its own.
+        case appAudioFound
         case micFailed(Error)
         case micReconnected
         /// Echo cancellation was asked for but had to be turned off (the reason says why).
         case voiceProcessingUnavailable(String)
+        /// Echo cancellation was asked for but isn't used on this route (the reason says why).
+        case voiceProcessingSkipped(String)
     }
 
     struct Configuration {
@@ -136,14 +144,20 @@ final class CapturePipeline {
         let transcriber = themTranscriber
         let processing = systemProcessing
         let tap = systemTap
-        tap.onReconnect = { [weak self] result in
+        tap.onReconnect = { [weak self] result, willRetry in
             switch result {
             case .success: self?.onEvent?(.systemAudioReconnected)
-            case .failure(let error): self?.onEvent?(.systemAudioFailed(error))
+            case .failure(let error): self?.onEvent?(.systemAudioFailed(error, willRetry: willRetry))
             }
         }
         tap.onProblem = { [weak self] problem in
             self?.onEvent?(.systemAudioProblem(problem))
+        }
+        tap.onProblemCleared = { [weak self] problem in
+            self?.onEvent?(.systemAudioProblemCleared(problem))
+        }
+        tap.onFallbackChange = { [weak self] fellBack in
+            self?.onEvent?(fellBack ? .appAudioNotFound : .appAudioFound)
         }
         // Runs on the Core Audio IO thread with a buffer the tap already copied:
         // hand it on and return. The serial queue keeps the order.
@@ -167,7 +181,7 @@ final class CapturePipeline {
                 $0.captureState = "Failed to start"
                 $0.lastError = String(describing: error)
             }
-            onEvent?(.systemAudioFailed(error))
+            onEvent?(.systemAudioFailed(error, willRetry: false))
         }
     }
 
@@ -181,10 +195,12 @@ final class CapturePipeline {
             case .failure(let error): self?.onEvent?(.micFailed(error))
             }
         }
-        // Only real fallbacks are reported; skipping echo cancellation on headphones
-        // isn't a problem.
         mic.onVoiceProcessingFallback = { [weak self] reason in
             self?.onEvent?(.voiceProcessingUnavailable(reason))
+        }
+        // The user turned echo cancellation on, so a skip is reported too.
+        mic.onVoiceProcessingSkipped = { [weak self] reason in
+            self?.onEvent?(.voiceProcessingSkipped(reason))
         }
         do {
             diagnostics.update { $0.captureState = "Starting" }

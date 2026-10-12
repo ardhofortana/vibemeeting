@@ -22,6 +22,8 @@ final class AppModel {
     /// so the report can still be copied after the call ends.
     private(set) var lastMeetingReport: String?
     var selectedRecordID: UUID?
+    /// Stopping and saving the meeting being ended. Quit and New meeting wait for it.
+    @ObservationIgnored private var teardown: Task<Void, Never>?
 
     init() {
         if let store = try? SessionStore(directory: SessionStore.defaultDirectory()) {
@@ -51,14 +53,20 @@ final class AppModel {
     // MARK: - Meetings
 
     func startMeeting(name: String, context: [ContextItem], preset: StylePreset, instructions: String) async {
-        if let activeSession, activeSession.isActive {
-            await endMeeting()
+        if let previous = activeSession {
+            let previousID = previous.id
+            let wasActive = previous.isActive
+            // Joins an End that is still saving. The recap runs alongside the new
+            // meeting instead of delaying its capture.
+            await endMeeting(thenRecap: false)
+            if wasActive { Task { await generateRecap(for: previousID) } }
         }
-        // Only one capture pipeline at a time.
-        await audioCheck.stop()
         if !MicrophoneCapture.permissionGranted {
             _ = await MicrophoneCapture.requestPermission()
         }
+        // Only one capture pipeline at a time. After the permission prompt, so an
+        // Audio check can't start while it's up.
+        await audioCheck.stop()
 
         let record = MeetingRecord(
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -80,17 +88,28 @@ final class AppModel {
     /// Stops listening, saves, then shows the meeting and writes its recap.
     /// When quitting, the recap is skipped; it can be created later from the main window.
     func endMeeting(thenRecap: Bool = true) async {
+        if let teardown {
+            // Already ending (End, then Quit or New meeting): wait for its save.
+            await teardown.value
+            return
+        }
         guard let session = activeSession else { return }
         Hotkeys.setEnabled(false)
         overlay.close()
-        await session.end()
-        if let report = session.diagnosticsReport {
-            lastMeetingReport = report
-            Self.saveDiagnostics(report)
+        let task = Task { @MainActor [self] in
+            await session.end()
+            if let report = session.diagnosticsReport {
+                lastMeetingReport = report
+                Self.saveDiagnostics(report)
+            }
+            upsert(session.record)
+            // Never clear a newer meeting.
+            if activeSession === session { activeSession = nil }
+            selectedRecordID = session.id
         }
-        upsert(session.record)
-        activeSession = nil
-        selectedRecordID = session.id
+        teardown = task
+        await task.value
+        if teardown == task { teardown = nil }
         guard thenRecap else { return }
         windows.showMain()
         await generateRecap(for: session.id)
@@ -113,7 +132,7 @@ final class AppModel {
     }
 
     func toggleOverlay() {
-        guard let activeSession else { return }
+        guard let activeSession, activeSession.isActive else { return }
         overlay.toggle(session: activeSession, app: self)
     }
 

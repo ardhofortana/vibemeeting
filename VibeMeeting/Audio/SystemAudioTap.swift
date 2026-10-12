@@ -20,16 +20,30 @@ final class SystemAudioTap: @unchecked Sendable {
     }
 
     enum Problem: Equatable {
-        /// IO runs and other apps are playing, but the tap delivers exact zeros even
-        /// after a rebuild. Almost always the System Audio Recording grant: an ad-hoc
-        /// ("Sign to Run Locally") build whose grant belongs to an older binary.
+        /// Other apps play, this capture has never received a non-zero sample (even
+        /// after a rebuild), and the permission looks wrong: the tap probe was refused,
+        /// the build is ad-hoc ("Sign to Run Locally", whose grant belongs to an older
+        /// binary), or the preflight isn't "authorized".
         case silentWhileOthersPlay
+        /// The same silence, but the permission looks fine. Could be a lobby or a
+        /// muted call, so it's reported softly.
+        case nothingHeardYet
         /// Buffers keep arriving in a layout that doesn't match the tap stream.
         case unreadableBuffers
         /// The aggregate device stopped calling the IO block while other apps play.
         case noAudioIO
+        /// IO stayed broken after the allowed reconnects.
+        case recoveryFailed
         /// The device or format kept changing, so rebuilding was paused.
         case deviceKeepsChanging
+
+        /// About the capture device rather than about what macOS lets the app hear.
+        var isDeviceProblem: Bool {
+            switch self {
+            case .silentWhileOthersPlay, .nothingHeardYet: return false
+            case .unreadableBuffers, .noAudioIO, .recoveryFailed, .deviceKeepsChanging: return true
+            }
+        }
     }
 
     typealias BufferHandler = @Sendable (AVAudioPCMBuffer) -> Void
@@ -60,6 +74,17 @@ final class SystemAudioTap: @unchecked Sendable {
     private var recoveryRebuilds = 0
     private var silentRebuilds = 0
     private var reportedProblem: Problem?
+    /// True once any tap in this capture delivered a non-zero sample. The System
+    /// Audio Recording grant is all or nothing for the process, so silence after
+    /// that is a quiet or muted call (WebRTC renders exact zeros then), not a
+    /// permission problem. Survives rebuilds; reset on start.
+    private var heardSignal = false
+    /// Uptime of the last non-zero sample across rebuilds (nil = never).
+    private var lastSignalUptime: TimeInterval?
+    /// Whether this tap's permission probe was refused (nil = couldn't tell).
+    private var tapDenied: Bool?
+    /// The fallback state last reported, so only changes are sent.
+    private var reportedFallback = false
     /// Tap-only first. If that aggregate never runs IO on this Mac while audio
     /// plays, fall back once to an output device as the aggregate's clock. Only a
     /// device with no input streams qualifies: a device with a mic would put its
@@ -81,10 +106,18 @@ final class SystemAudioTap: @unchecked Sendable {
         }
     }
 
-    /// Called on the main queue after the tap was rebuilt (or failed to rebuild).
-    var onReconnect: ((Result<Void, Error>) -> Void)?
+    /// Called on the main queue when a rebuild fails (`willRetry`: another attempt
+    /// is scheduled) and when a rebuild succeeds after failing. Routine rebuilds
+    /// (device changes, recovery) aren't reported: a rebuilt tap isn't proof that
+    /// audio is back.
+    var onReconnect: ((_ result: Result<Void, Error>, _ willRetry: Bool) -> Void)?
     /// Called on the main queue when capture is running but unusable.
     var onProblem: ((Problem) -> Void)?
+    /// Called on the main queue when a reported problem is over (sound or IO is back).
+    var onProblemCleared: ((Problem) -> Void)?
+    /// Called on the main queue when an app source switches between its own
+    /// processes and all system audio after start.
+    var onFallbackChange: ((_ fellBackToAllAudio: Bool) -> Void)?
 
     /// True when an app source was requested but none of its processes were found.
     private(set) var fellBackToAllAudio = false
@@ -128,15 +161,21 @@ final class SystemAudioTap: @unchecked Sendable {
         recoveryRebuilds = 0
         silentRebuilds = 0
         reportedProblem = nil
+        heardSignal = false
+        lastSignalUptime = nil
         rebuildTimes = []
         composition = .tapOnly
-        diagnostics?.update { $0.problem = nil }
+        diagnostics?.update {
+            $0.problem = nil
+            $0.chosenAppIdle = false
+        }
         do {
             try startTap()
         } catch {
             self.handler = nil
             throw error
         }
+        reportedFallback = fellBackToAllAudio
         startWatchdog()
     }
 
@@ -192,13 +231,6 @@ final class SystemAudioTap: @unchecked Sendable {
             let stream = try TapStream(tapID: tapID, aggregateID: aggregateID)
             self.stream = stream
             publishedUnreadable = 0
-            let detail = "\(stream.summary); aggregate: \(self.composition.label); "
-                + "source: \(source == .allSystemAudio || fellBackToAllAudio ? "all system audio" : "one app"); "
-                + "permission preflight: \(SystemAudioPermission.status.rawValue)"
-            diagnostics?.update {
-                $0.deviceDetail = detail
-                $0.captureState = "Starting"
-            }
 
             // The IO block only copies and hands on; the handler must not do heavy work
             // here (CapturePipeline moves conversion to its own queue).
@@ -209,6 +241,17 @@ final class SystemAudioTap: @unchecked Sendable {
                 guard let buffer = stream.read(inputData) else { return }
                 handler?(buffer)
             }, "Creating IO proc")
+
+            // Chromium's order: probe after creating the IO proc, before starting.
+            tapDenied = probeTapPermissionDenied()
+            let probe = tapDenied.map { $0 ? "refused" : "ok" } ?? "unknown"
+            let detail = "\(stream.summary); aggregate: \(self.composition.label); "
+                + "source: \(sourceLabel); "
+                + "permission preflight: \(SystemAudioPermission.status.rawValue); tap probe: \(probe)"
+            diagnostics?.update {
+                $0.deviceDetail = detail
+                $0.captureState = "Starting"
+            }
 
             try check(AudioDeviceStart(aggregateID, procID), "Starting aggregate device")
             installListeners()
@@ -236,6 +279,30 @@ final class SystemAudioTap: @unchecked Sendable {
         aggregateID = .unknown
         tapID = .unknown
         stream = nil
+    }
+
+    private var sourceLabel: String {
+        guard case .app(let bundleID) = source else { return "all system audio" }
+        return fellBackToAllAudio ? "all system audio (\(bundleID) had no audio process)" : "only \(bundleID)"
+    }
+
+    /// Chromium's permission probe (ProbeAudioTapPermissions): writing the tap's own
+    /// description back fails (kAudioDevicePermissionsError) when System Audio
+    /// Recording isn't allowed for this process. nil when it can't tell.
+    private func probeTapPermissionDenied() -> Bool? {
+        var address = tapID.address(kAudioTapPropertyDescription)
+        var size = UInt32(MemoryLayout<Unmanaged<CATapDescription>?>.size)
+        var value: Unmanaged<CATapDescription>?
+        guard AudioObjectGetPropertyData(tapID, &address, 0, nil, &size, &value) == noErr,
+              var description = value
+        else { return nil }
+        // Core Audio hands out object properties retained.
+        defer { description.release() }
+        let status = AudioObjectSetPropertyData(tapID, &address, 0, nil, size, &description)
+        if status != noErr {
+            Log.audio.error("Tap permission probe refused: \(status)")
+        }
+        return status != noErr
     }
 
     private func makeTapDescription() -> CATapDescription {
@@ -357,12 +424,25 @@ final class SystemAudioTap: @unchecked Sendable {
             $0.rebuilds += 1
             $0.lastRebuildReason = reason
         }
+        // checkHealth skips while a rebuild is pending; keep what the old tap heard.
+        if let stream { absorb(stream.health()) }
         stopTap()
-        let result: Result<Void, Error>
         do {
             try startTap()
+            let recovered = failedRebuilds > 0
             failedRebuilds = 0
-            result = .success(())
+            if recovered {
+                // The failure notice goes away with this; a problem that persists
+                // must be reported (and shown) again.
+                reportedProblem = nil
+                diagnostics?.update { $0.problem = nil }
+                DispatchQueue.main.async { [weak self] in self?.onReconnect?(.success(()), false) }
+            }
+            let fellBack = fellBackToAllAudio
+            if fellBack != reportedFallback {
+                reportedFallback = fellBack
+                DispatchQueue.main.async { [weak self] in self?.onFallbackChange?(fellBack) }
+            }
         } catch {
             Log.audio.error("Rebuilding tap failed: \(error.localizedDescription, privacy: .public)")
             diagnostics?.update {
@@ -370,12 +450,12 @@ final class SystemAudioTap: @unchecked Sendable {
                 $0.lastError = error.localizedDescription
             }
             failedRebuilds += 1
-            if failedRebuilds <= 4 {
+            let willRetry = failedRebuilds <= 4
+            if willRetry {
                 scheduleRebuild(reason, after: Double(1 << (failedRebuilds - 1)))
             }
-            result = .failure(error)
+            DispatchQueue.main.async { [weak self] in self?.onReconnect?(.failure(error), willRetry) }
         }
-        DispatchQueue.main.async { [weak self] in self?.onReconnect?(result) }
     }
 
     // MARK: - Watchdog (controlQueue)
@@ -392,6 +472,7 @@ final class SystemAudioTap: @unchecked Sendable {
     private func checkHealth() {
         guard handler != nil, pendingRebuild == nil, let stream else { return }
         let health = stream.health()
+        absorb(health)
         publish(health, of: stream)
         guard health.age > 3 else { return }
 
@@ -405,8 +486,7 @@ final class SystemAudioTap: @unchecked Sendable {
                 Log.audio.error("Tap-only aggregate ran no IO; retrying with \(clock.name, privacy: .public) as clock")
                 scheduleRebuild("no IO from the tap-only aggregate")
             } else {
-                report(.noAudioIO)
-                recover("no IO from the aggregate")
+                reportAndRecover(.noAudioIO, "no IO from the aggregate")
             }
             return
         }
@@ -414,38 +494,68 @@ final class SystemAudioTap: @unchecked Sendable {
         if health.secondsSinceSignal < 1 {
             recoveryRebuilds = 0
             silentRebuilds = 0
-            if reportedProblem != nil {
-                reportedProblem = nil
-                diagnostics?.update { $0.problem = nil }
-            }
+            clearProblem()
+            publishChosenAppIdle(false)
             return
         }
 
         if health.consecutiveUnreadable >= 100 {
-            report(.unreadableBuffers)
-            recover("IO buffers don't match the tap stream")
+            reportAndRecover(.unreadableBuffers, "IO buffers don't match the tap stream")
             return
         }
+        // Readable IO is flowing again, so an earlier IO problem is over (the call
+        // may simply be quiet).
+        if health.secondsSinceCycle < 2, health.consecutiveUnreadable == 0,
+           let problem = reportedProblem, problem == .noAudioIO || problem == .unreadableBuffers || problem == .recoveryFailed {
+            clearProblem()
+        }
 
-        // Only judge silence while a tapped process is actually playing. A muted or
-        // quiet call still reports output, so the window is generous.
-        guard tappedProcessesPlaying() else { return }
+        let playing = tappedProcessesPlaying()
+        publishChosenAppIdle(!playing && isAppSource && AudioProcessCatalog.anyOtherProcessPlaying())
+        // Only judge silence while a tapped process is actually playing.
+        guard playing else { return }
         if health.secondsSinceCycle > 3 {
-            report(.noAudioIO)
-            recover("IO stalled")
-        } else if health.secondsSinceSignal > 15 {
+            reportAndRecover(.noAudioIO, "IO stalled")
+        } else if !heardSignal, health.secondsSinceSignal > 15 {
+            // Only before anything was heard: "playing" means only that an output
+            // runs, and a muted call delivers exact zeros too.
             if silentRebuilds == 0 {
                 // A grant given while a tap exists only takes effect on a new tap.
                 silentRebuilds = 1
                 recover("only digital silence while other apps play")
             } else if health.secondsSinceSignal > 30 {
-                report(.silentWhileOthersPlay)
+                let permissionSuspect = tapDenied == true || CodeSigning.isAdHoc
+                    || SystemAudioPermission.status != .authorized
+                report(permissionSuspect ? .silentWhileOthersPlay : .nothingHeardYet)
             }
         }
     }
 
+    private var isAppSource: Bool {
+        if case .app = source, !tappedProcesses.isEmpty { return true }
+        return false
+    }
+
+    /// Keeps what a tap heard across rebuilds.
+    private func absorb(_ health: TapStream.Health) {
+        guard health.everSignal else { return }
+        heardSignal = true
+        lastSignalUptime = ProcessInfo.processInfo.systemUptime - health.secondsSinceSignal
+    }
+
     private func recover(_ reason: String) {
         guard recoveryRebuilds < 3 else { return }
+        recoveryRebuilds += 1
+        scheduleRebuild(reason)
+    }
+
+    /// Reports an IO problem and rebuilds; once the rebuilds are spent, says so once.
+    private func reportAndRecover(_ problem: Problem, _ reason: String) {
+        guard recoveryRebuilds < 3 else {
+            report(.recoveryFailed)
+            return
+        }
+        report(problem)
         recoveryRebuilds += 1
         scheduleRebuild(reason)
     }
@@ -455,6 +565,17 @@ final class SystemAudioTap: @unchecked Sendable {
         reportedProblem = problem
         diagnostics?.update { $0.problem = "\(problem)" }
         DispatchQueue.main.async { [weak self] in self?.onProblem?(problem) }
+    }
+
+    private func clearProblem() {
+        guard let problem = reportedProblem else { return }
+        reportedProblem = nil
+        diagnostics?.update { $0.problem = nil }
+        DispatchQueue.main.async { [weak self] in self?.onProblemCleared?(problem) }
+    }
+
+    private func publishChosenAppIdle(_ idle: Bool) {
+        diagnostics?.update { $0.chosenAppIdle = idle }
     }
 
     /// An output device with no input streams, to clock the fallback aggregate.
@@ -497,9 +618,9 @@ final class SystemAudioTap: @unchecked Sendable {
         diagnostics?.update {
             $0.unreadableBuffers += newUnreadable
             if let layout { $0.unreadableLayout = layout }
-            // nil = no non-zero sample yet from this tap.
+            // Across rebuilds; nil = no non-zero sample yet in this capture.
             $0.tracksNonZero = true
-            $0.secondsSinceNonZero = health.everSignal ? health.secondsSinceSignal : nil
+            $0.secondsSinceNonZero = lastSignalUptime.map { ProcessInfo.processInfo.systemUptime - $0 }
             if $0.captureState.hasPrefix("Running") {
                 $0.captureState = "Running (\(health.cycles) IO cycles since last start)"
             }

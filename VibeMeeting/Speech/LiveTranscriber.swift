@@ -164,6 +164,7 @@ final class LiveTranscriber: @unchecked Sendable {
                 // A normal end is expected only after stop(), which bumps the generation.
                 let stillRunning = self?.lock.withLock { self?.generation == token } ?? false
                 if stillRunning, !Task.isCancelled {
+                    self?.closeInput(token: token)
                     Log.speech.error("Transcriber \(speaker.rawValue, privacy: .public) results ended on their own")
                     diagnostics.update {
                         $0.transcriberState = "Ended unexpectedly"
@@ -174,6 +175,7 @@ final class LiveTranscriber: @unchecked Sendable {
             } catch is CancellationError {
             } catch {
                 // Any analyzer or module error ends the session and is thrown here.
+                self?.closeInput(token: token)
                 Log.speech.error("Transcriber \(speaker.rawValue, privacy: .public) stopped: \(String(describing: error), privacy: .public)")
                 diagnostics.update {
                     $0.transcriberState = "Stopped with an error"
@@ -214,6 +216,21 @@ final class LiveTranscriber: @unchecked Sendable {
         Log.speech.info("Transcriber \(speaker.rawValue, privacy: .public) started, \(StreamDiagnostics.describe(format), privacy: .public)")
     }
 
+    /// The analyzer finished on its own. It stops reading but doesn't end the input
+    /// sequence, so close it: append() then stops counting audio nobody hears.
+    private func closeInput(token: Int) {
+        let input: AsyncStream<AnalyzerInput>.Continuation? = lock.withLock {
+            guard generation == token else { return nil }
+            defer {
+                continuation = nil
+                analyzerFormat = nil
+                accumulator = nil
+            }
+            return continuation
+        }
+        input?.finish()
+    }
+
     // MARK: - Feeding
 
     /// Feeds one capture buffer. Called on the capture thread; converts synchronously
@@ -235,7 +252,11 @@ final class LiveTranscriber: @unchecked Sendable {
             for chunk in chunks {
                 let rms = AudioLevelMeter.rms(of: chunk)
                 let dropped: Bool
-                if case .dropped = continuation.yield(AnalyzerInput(buffer: chunk)) { dropped = true } else { dropped = false }
+                switch continuation.yield(AnalyzerInput(buffer: chunk)) {
+                case .terminated: continue   // nobody reads it; don't count it as fed
+                case .dropped: dropped = true
+                default: dropped = false
+                }
                 diagnostics.update {
                     $0.buffersToAnalyzer += 1
                     $0.framesToAnalyzer += Int(chunk.frameLength)

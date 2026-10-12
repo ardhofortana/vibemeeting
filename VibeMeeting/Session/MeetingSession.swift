@@ -37,8 +37,11 @@ final class MeetingSession: Identifiable {
     }
 
     struct Notice: Identifiable, Equatable {
-        enum Kind: Equatable {
+        enum Kind: Hashable {
+            /// Nothing heard from the call: permission, or the wrong source.
             case cantHearCall
+            /// The system audio device fails (start, rebuild, IO).
+            case systemAudioError
             case micSilent
             case micUnavailable
             case appAudioNotFound
@@ -99,6 +102,15 @@ final class MeetingSession: Identifiable {
     @ObservationIgnored private var isDirty = false
     @ObservationIgnored private var lastSave = Date()
     @ObservationIgnored private var listeningSince = Date()
+    /// Notices the user closed; condition-driven checks don't bring them back
+    /// until the condition clears.
+    @ObservationIgnored private var dismissed: Set<Notice.Kind> = []
+    /// A system audio rebuild is scheduled after a failure.
+    @ObservationIgnored private var themRetrying = false
+    /// When each stream last failed; fresh sound after that clears its notice.
+    @ObservationIgnored private var themFailedAt: Date?
+    @ObservationIgnored private var youFailedAt: Date?
+    @ObservationIgnored private var othersPlaying: (at: Date, value: Bool)?
     /// The diagnostics report taken just before capture stopped (no transcript text).
     @ObservationIgnored private(set) var diagnosticsReport: String?
 
@@ -166,8 +178,7 @@ final class MeetingSession: Identifiable {
         status = .ended
     }
 
-    private static let cantHearMessage = "Can't hear the call. Check that VibeMeeting has audio capture permission, or open Audio check."
-    private static let micMessage = "Can't use the microphone. Check that VibeMeeting has microphone permission."
+    private static let genericCantHearMessage = "Can't hear the call, though another app is playing. Check that VibeMeeting has audio capture permission, or open Audio check."
 
     static func message(for problem: SystemAudioTap.Problem) -> String {
         switch problem {
@@ -175,37 +186,68 @@ final class MeetingSession: Identifiable {
             return CodeSigning.isAdHoc
                 ? "Can't hear the call: macOS gives this build only silence. It's signed without a Team, so its System Audio Recording permission resets on every rebuild. See Audio check."
                 : "Can't hear the call: macOS gives VibeMeeting only silence. Re-allow it under Privacy & Security → Screen & System Audio Recording → System Audio Recording Only, then restart the meeting."
+        case .nothingHeardYet:
+            return "No sound from other apps yet, though one is playing. If the other side is talking, open Audio check."
         case .unreadableBuffers, .noAudioIO:
             return "Can't read system audio. Reconnecting…"
+        case .recoveryFailed:
+            return "System audio still can't be read after reconnecting. Open Audio check and copy the report, or end and restart the meeting."
         case .deviceKeepsChanging:
             return "System audio keeps changing devices or format, so VibeMeeting stopped reconnecting. End and restart the meeting."
         }
+    }
+
+    private static func noticeKind(for problem: SystemAudioTap.Problem) -> Notice.Kind {
+        problem.isDeviceProblem ? .systemAudioError : .cantHearCall
     }
 
     private func handle(_ event: CapturePipeline.Event) {
         switch event {
         case .transcriberFailed(let speaker, let error):
             let kind: Notice.Kind = speaker == .them ? .themTranscriptionFailed : .youTranscriptionFailed
-            addNotice(kind, "Transcription for \(speaker.label) stopped: \(LiveTranscriber.describe(error))")
-        case .systemAudioFailed(let error):
-            if status == .listening { status = .reconnecting }
-            addNotice(.cantHearCall, "\(Self.cantHearMessage) (\(error.localizedDescription))")
-        case .systemAudioProblem(let problem):
-            addNotice(.cantHearCall, Self.message(for: problem))
+            setNotice(kind, "Transcription for \(speaker.label) stopped: \(LiveTranscriber.describe(error))")
+        case .systemAudioFailed(let error, let willRetry):
+            themRetrying = willRetry
+            themFailedAt = Date()
+            setNotice(.systemAudioError, willRetry
+                ? "Lost system audio (\(error.localizedDescription)). Reconnecting…"
+                : "Can't capture system audio (\(error.localizedDescription)). Open Audio check, or end and restart the meeting.")
+            refreshLiveStatus()
         case .systemAudioReconnected:
-            removeNotice(.cantHearCall)
-            if status == .reconnecting { status = .listening }
+            themRetrying = false
+            themFailedAt = nil
+            removeNotice(.systemAudioError)
+            refreshLiveStatus()
+        case .systemAudioProblem(let problem):
+            // More specific than whatever this kind shows (the generic 60 s text too).
+            setNotice(Self.noticeKind(for: problem), Self.message(for: problem))
+        case .systemAudioProblemCleared(let problem):
+            removeNotice(Self.noticeKind(for: problem))
         case .appAudioNotFound:
-            addNotice(.appAudioNotFound, "The chosen app isn't playing audio yet. Listening to all system audio.")
+            setNotice(.appAudioNotFound, "The chosen app isn't playing audio yet. Listening to all system audio.")
+        case .appAudioFound:
+            removeNotice(.appAudioNotFound)
         case .micFailed(let error):
-            if status == .listening { status = .reconnecting }
-            addNotice(.micUnavailable, "\(Self.micMessage) (\(error.localizedDescription))")
+            // No status change: nothing retries on a schedule. A mic appearing or a
+            // device change restarts it, and the notice says what's wrong.
+            youFailedAt = Date()
+            setNotice(.micUnavailable, "Can't use the microphone: \(error.localizedDescription)")
         case .micReconnected:
+            youFailedAt = nil
             removeNotice(.micUnavailable)
-            if status == .reconnecting { status = .listening }
         case .voiceProcessingUnavailable(let reason):
-            addNotice(.echoCancellationOff, "\(reason). Echo cancellation is off; a headset keeps Them and You apart.")
+            setNotice(.echoCancellationOff, "\(reason). Echo cancellation is off; a headset keeps Them and You apart.")
+        case .voiceProcessingSkipped(let reason):
+            setNotice(.echoCancellationOff, "Echo cancellation not used: \(reason).")
         }
+    }
+
+    private var isLive: Bool { status == .listening || status == .reconnecting }
+
+    /// "Reconnecting" only while a system audio rebuild is actually scheduled.
+    private func refreshLiveStatus() {
+        guard isLive else { return }
+        status = themRetrying ? .reconnecting : .listening
     }
 
     // MARK: - Transcript
@@ -485,12 +527,26 @@ final class MeetingSession: Identifiable {
         themLevel = them.level
         youLevel = you.level
 
-        if status == .listening {
+        if isLive {
             let listenedFor = now.timeIntervalSince(listeningSince)
             let themQuiet = now.timeIntervalSince(them.lastSoundAt ?? listeningSince)
             let youQuiet = now.timeIntervalSince(you.lastSoundAt ?? listeningSince)
-            if listenedFor > 60, themQuiet > 60 {
-                addNotice(.cantHearCall, Self.cantHearMessage)
+            // Fresh sound after a failure proves the stream works again (a mic that
+            // stopped delivering audio never reports a recovery itself).
+            if let since = themFailedAt, let heard = them.lastSoundAt, heard > since.addingTimeInterval(1) {
+                themFailedAt = nil
+                themRetrying = false
+                removeNotice(.systemAudioError)
+                refreshLiveStatus()
+            }
+            if let since = youFailedAt, let heard = you.lastSoundAt, heard > since.addingTimeInterval(1) {
+                youFailedAt = nil
+                removeNotice(.micUnavailable)
+            }
+            // Nothing heard in this meeting at all, while another app plays. (Quiet
+            // stretches after the call was heard are normal: muted, presenting.)
+            if listenedFor > 60, them.lastSoundAt == nil, isOtherAudioPlaying(now) {
+                addNotice(.cantHearCall, cantHearNoticeText())
             } else if themQuiet < 1 {
                 removeNotice(.cantHearCall)
             }
@@ -514,15 +570,36 @@ final class MeetingSession: Identifiable {
         }
     }
 
+    /// The generic "can't hear" text, or a hint about the chosen source app.
+    private func cantHearNoticeText() -> String {
+        guard let bundleID = settings.audioSourceBundleID, pipeline.themDiagnostics.read().chosenAppIdle else {
+            return Self.genericCantHearMessage
+        }
+        let name = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == bundleID }?.localizedName ?? bundleID
+        return "Listening only to \(name), which isn't playing while another app is. If your call is in another app, set Settings → Audio → Listen to → All system audio."
+    }
+
+    /// Whether any other app is sending audio to an output (read at most once a second).
+    private func isOtherAudioPlaying(_ now: Date) -> Bool {
+        if let cached = othersPlaying, now.timeIntervalSince(cached.at) < 1 { return cached.value }
+        let value = AudioProcessCatalog.anyOtherProcessPlaying()
+        othersPlaying = (now, value)
+        return value
+    }
+
     /// Turns "meter moves but no words" into an explicit notice that names the stage.
     private func checkRecognition(_ snapshot: StreamDiagnostics.Snapshot, kind: Notice.Kind, label: String, listenedFor: TimeInterval) {
         if snapshot.volatileResults + snapshot.finalResults > 0 {
             removeNotice(kind)
             return
         }
+        // A recognizer that stopped has its own notice; the hints below would mislead.
+        guard snapshot.transcriberState.hasPrefix("Running") else {
+            removeNotice(kind)
+            return
+        }
         guard listenedFor > 15 else { return }
-        if snapshot.peakRMS > AudioLevelMeter.silenceRMS, snapshot.buffersToAnalyzer > 0,
-           snapshot.analyzerPeakRMS <= AudioLevelMeter.silenceRMS {
+        if snapshot.lostInConversion() {
             addNotice(kind, "\(label): audio is captured, but speech recognition only receives silence. Open the stethoscope and copy the report.")
         } else if snapshot.speechLevelChunks >= 100 {
             // About 10 s of speech-level audio reached the recognizer with no result.
@@ -530,17 +607,34 @@ final class MeetingSession: Identifiable {
         }
     }
 
+    /// Condition-driven (tick): shown once per episode, never over a more specific
+    /// message, and not again after the user closed it.
     private func addNotice(_ kind: Notice.Kind, _ message: String) {
-        guard !notices.contains(where: { $0.kind == kind }) else { return }
+        guard !dismissed.contains(kind), !notices.contains(where: { $0.kind == kind }) else { return }
         notices.append(Notice(kind: kind, message: message))
     }
 
+    /// Event-driven: a newer message replaces the shown one, even after a dismiss.
+    private func setNotice(_ kind: Notice.Kind, _ message: String) {
+        dismissed.remove(kind)
+        if let index = notices.firstIndex(where: { $0.kind == kind }) {
+            notices[index] = Notice(kind: kind, message: message)
+        } else {
+            notices.append(Notice(kind: kind, message: message))
+        }
+    }
+
+    /// The condition cleared, so a later episode may notify again.
     private func removeNotice(_ kind: Notice.Kind) {
+        dismissed.remove(kind)
+        // Called every tick while sound flows; don't touch the observed array then.
+        guard notices.contains(where: { $0.kind == kind }) else { return }
         notices.removeAll { $0.kind == kind }
     }
 
     func dismissNotice(_ kind: Notice.Kind) {
-        removeNotice(kind)
+        notices.removeAll { $0.kind == kind }
+        dismissed.insert(kind)
     }
 
     // MARK: - Saving

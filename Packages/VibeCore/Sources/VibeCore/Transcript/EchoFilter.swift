@@ -1,9 +1,10 @@
 import Foundation
 
-/// Second line of defense against speaker bleed: when the other side's voice
-/// leaks from the speakers into the mic, the "You" recognizer hears the same
-/// words the "Them" recognizer just heard. Voice processing on the mic removes
-/// most of it; this catches what slips through.
+/// Defense against speaker bleed: when the other side's voice leaks from the
+/// speakers into the mic, the "You" recognizer hears the same words the "Them"
+/// recognizer just heard. Voice processing (echo cancellation, off by default)
+/// removes most of it when on; this catches near-verbatim repeats either way, and
+/// only while "Them" is being transcribed.
 ///
 /// Bleed is a near-verbatim copy, while a real answer often reuses a phrase
 /// ("Can you do it in two weeks?" → "I can do it in two weeks"). So the bar is
