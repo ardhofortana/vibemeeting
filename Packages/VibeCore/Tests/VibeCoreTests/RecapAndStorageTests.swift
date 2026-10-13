@@ -153,6 +153,21 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: older.id).path))
     }
 
+    func testStarSavesAndOlderRecordsLoadUnstarred() throws {
+        let store = try SessionStore(directory: directory)
+        let starred = MeetingRecord(name: "Starred", presetID: "p", presetName: "P", replyModel: "m", isStarred: true)
+        try store.save(starred)
+        XCTAssertEqual(try store.load(id: starred.id).isStarred, true)
+
+        // A record saved before starring existed.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(starred)) as? [String: Any])
+        XCTAssertNotNil(json.removeValue(forKey: "isStarred"))
+        let decoded = try JSONDecoder().decode(MeetingRecord.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertFalse(decoded.isStarred)
+        XCTAssertEqual(decoded.name, "Starred")
+        XCTAssertFalse(MeetingRecord(name: "New", presetID: "p", presetName: "P", replyModel: "m").isStarred)
+    }
+
     func testTranscriptTextOffsets() {
         let start = Date(timeIntervalSince1970: 0)
         let record = MeetingRecord(name: "x", startedAt: start, presetID: "p", presetName: "P", turns: [

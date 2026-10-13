@@ -19,6 +19,8 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
     public var replyModel: String
     public var recapModel: String?
     public var stats: SessionStats
+    /// Starred in the main window, to find it again quickly.
+    public var isStarred: Bool
 
     public init(
         id: UUID = UUID(),
@@ -36,7 +38,8 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         recapError: String? = nil,
         replyModel: String,
         recapModel: String? = nil,
-        stats: SessionStats = SessionStats()
+        stats: SessionStats = SessionStats(),
+        isStarred: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -54,6 +57,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         self.replyModel = replyModel
         self.recapModel = recapModel
         self.stats = stats
+        self.isStarred = isStarred
     }
 
     // Meetings saved before a field existed still load.
@@ -75,6 +79,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         replyModel = try container.decode(String.self, forKey: .replyModel)
         recapModel = try container.decodeIfPresent(String.self, forKey: .recapModel)
         stats = try container.decodeIfPresent(SessionStats.self, forKey: .stats) ?? SessionStats()
+        isStarred = try container.decodeIfPresent(Bool.self, forKey: .isStarred) ?? false
     }
 
     /// Name shown in lists.

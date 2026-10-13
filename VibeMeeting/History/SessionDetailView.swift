@@ -38,17 +38,6 @@ struct SessionDetailView: View {
                 content(record)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .toolbar {
-                ToolbarItem {
-                    Button(role: .destructive) {
-                        confirmingDelete = true
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                    .help("Delete this meeting permanently")
-                    .disabled(isLive)
-                }
-            }
             .confirmationDialog("Delete “\(record.displayName)” permanently?", isPresented: $confirmingDelete) {
                 Button("Delete", role: .destructive) { app.delete(id: recordID) }
             } message: {
@@ -65,6 +54,33 @@ struct SessionDetailView: View {
     // MARK: - Header
 
     private func header(_ record: MeetingRecord) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            details(record)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Button {
+                    app.toggleStar(id: recordID)
+                } label: {
+                    Image(systemName: record.isStarred ? "star.fill" : "star")
+                        .foregroundStyle(record.isStarred ? Color.yellow : Color.primary)
+                }
+                .help(record.isStarred ? "Unstar" : "Star, to find it under Starred")
+                .accessibilityLabel(record.isStarred ? "Unstar" : "Star")
+                Button(role: .destructive) {
+                    confirmingDelete = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .help("Delete this meeting permanently")
+                .accessibilityLabel("Delete")
+            }
+            .buttonStyle(GlassIconButtonStyle())
+            // The live record is still being saved.
+            .disabled(isLive)
+        }
+    }
+
+    private func details(_ record: MeetingRecord) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if editingName {
                 TextField("Meeting name", text: $draftName)
@@ -204,6 +220,7 @@ struct SessionDetailView: View {
                             .foregroundStyle(turn.speaker == .them ? HierarchicalShapeStyle.primary : HierarchicalShapeStyle.secondary)
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -230,6 +247,7 @@ struct SessionDetailView: View {
                         Button("Copy") { copy(Self.scriptBody(script, numbered: false)) }
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -290,6 +308,7 @@ struct SessionDetailView: View {
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
     }

@@ -226,6 +226,35 @@ struct GlassButtonStyle: ButtonStyle {
     }
 }
 
+/// A round icon button on glass: New meeting in the main window's title row,
+/// Star and Delete on a meeting.
+struct GlassIconButtonStyle: ButtonStyle {
+    var diameter: CGFloat = 30
+
+    func makeBody(configuration: Configuration) -> some View {
+        IconBody(configuration: configuration, diameter: diameter)
+    }
+
+    private struct IconBody: View {
+        let configuration: ButtonStyleConfiguration
+        let diameter: CGFloat
+        @State private var hovering = false
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: diameter, height: diameter)
+                .background(Circle().fill(Color.primary.opacity(configuration.isPressed ? 0.16 : hovering ? 0.11 : 0.06)))
+                .overlay(Circle().strokeBorder(Glass.fieldStroke))
+                .contentShape(Circle())
+                .opacity(isEnabled ? 1 : 0.4)
+                .onHover { hovering = $0 }
+        }
+    }
+}
+
 /// Pale tints of the gradient with a dark label: Reply in the overlay,
 /// Choose files in New meeting.
 struct SoftGradientButtonStyle: ButtonStyle {

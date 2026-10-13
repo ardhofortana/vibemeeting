@@ -198,6 +198,12 @@ final class AppModel {
         save(record)
     }
 
+    func toggleStar(id: UUID) {
+        guard var record = record(id: id), activeSession?.id != id else { return }
+        record.isStarred.toggle()
+        save(record)
+    }
+
     private func save(_ record: MeetingRecord) {
         do {
             try store.save(record)
