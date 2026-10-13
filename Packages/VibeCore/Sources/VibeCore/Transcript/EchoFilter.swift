@@ -30,6 +30,13 @@ public enum EchoFilter {
     static let maxCandidateWords = 120
     static let maxReferenceWords = 120
 
+    /// Whether the garbled-copy rule suits the call language. Its stems, sound
+    /// keys and function words are English, so it runs for English only; the
+    /// near-verbatim rule works for any language written with spaces.
+    public static func handlesGarbledEcho(in language: String) -> Bool {
+        MeetingLanguage.isEnglish(language)
+    }
+
     public static func isLikelyEcho(_ candidate: String, reference: String) -> Bool {
         (score(candidate, reference: reference) ?? 0) >= threshold
     }

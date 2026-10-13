@@ -28,7 +28,7 @@ public struct RecapPromptBuilder: Sendable {
     public func partRequest(record: MeetingRecord, aboutMe: String, part: String, index: Int, total: Int) -> MessagesRequest {
         request(
             aboutMe: aboutMe,
-            content: [.text("Part \(index + 1) of \(total) of the meeting transcript:\n<transcript>\n\(part)\n</transcript>\n\n\(Prompts.recapChunkInstruction)")],
+            content: [.text("\(Self.languageText(record.language))\n\nPart \(index + 1) of \(total) of the meeting transcript:\n<transcript>\n\(part)\n</transcript>\n\n\(Prompts.recapChunkInstruction)")],
             jsonSchema: nil
         )
     }
@@ -36,7 +36,7 @@ public struct RecapPromptBuilder: Sendable {
     /// The final recap request, over the full transcript or over part notes.
     public func recapRequest(record: MeetingRecord, aboutMe: String, partNotes: [String]? = nil) -> MessagesRequest {
         var content = ReplyPromptBuilder.contextBlocks(record.context)
-        var text = ""
+        var text = Self.languageText(record.language) + "\n\n"
         let name = record.name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty { text += "Meeting name: \(name)\n\n" }
         let goal = record.goal.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -51,6 +51,16 @@ public struct RecapPromptBuilder: Sendable {
         text += "\n\nWrite the recap of this meeting."
         content.append(.text(text))
         return request(aboutMe: aboutMe, content: content, jsonSchema: Recap.jsonSchema)
+    }
+
+    /// The language spoken in the meeting and the one to write the recap in.
+    static func languageText(_ language: MeetingLanguage) -> String {
+        """
+        <language>
+        The meeting was in \(ReplyPromptBuilder.describe(language.callLocale)).
+        Write the recap in \(ReplyPromptBuilder.describe(language.recap)).
+        </language>
+        """
     }
 
     private func request(aboutMe: String, content: [ContentBlock], jsonSchema: JSONValue?) -> MessagesRequest {

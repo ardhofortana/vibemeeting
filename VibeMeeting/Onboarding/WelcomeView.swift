@@ -6,6 +6,7 @@ import VibeCore
 struct WelcomeView: View {
     @Environment(AppModel.self) private var app
     @State private var priming = false
+    @State private var modelProgress: Double?
     @State private var primeResult: PermissionPrimer.Result?
     @State private var key = ""
     @State private var keyError: String?
@@ -23,19 +24,31 @@ struct WelcomeView: View {
             step(number: 1, title: "Audio") {
                 Text("VibeMeeting needs to hear your calls. Audio stays on this Mac. Only text is sent to Claude to draft replies.")
                     .fixedSize(horizontal: false, vertical: true)
+                Text("Calls are transcribed in \(callLanguage). You can change the language in Settings → General, or for one meeting when you start it.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button("Allow audio capture") {
                         Task {
                             priming = true
-                            primeResult = await PermissionPrimer.run()
+                            primeResult = await PermissionPrimer.run(locale: app.defaultCallLocale) { fraction in
+                                modelProgress = fraction
+                            }
+                            modelProgress = nil
                             priming = false
                         }
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(priming)
                     if priming {
-                        ProgressView().controlSize(.small)
-                        Text("Setting up… the English speech model may take a minute to download.")
+                        if let modelProgress {
+                            ProgressView(value: modelProgress)
+                                .frame(width: 100)
+                        } else {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text("Setting up… the speech model for \(callLanguage) may take a minute to download.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -79,6 +92,10 @@ struct WelcomeView: View {
             }
         }
         .padding(24)
+    }
+
+    private var callLanguage: String {
+        MeetingLanguage.displayName(of: app.defaultCallLocale)
     }
 
     private func step<Content: View>(number: Int, title: String, @ViewBuilder content: () -> Content) -> some View {

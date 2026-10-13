@@ -22,7 +22,7 @@ It works for any kind of meeting (General is the default framing), and for any u
 - Distribution: notarized Developer ID download first; no App Store for now.
 - AI access: bring your own Anthropic API key.
 - Pricing: free beta; licensing later.
-- Language: one call language per meeting for both sides. Replies, questions and recaps follow it by default, with an override.
+- Language: one call language per meeting for both sides. Replies, questions and recaps follow it by default, with an override. The call language is one that on-device speech recognition supports; replies and recaps can be in any language the model writes. Languages not written in the Latin or Cyrillic alphabet are a preview until sentence splitting, word counts and the echo filter handle them.
 - UI and documentation: English first, translations alongside.
 - Closed source.
 

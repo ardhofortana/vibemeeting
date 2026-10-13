@@ -5,7 +5,8 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
     /// Format version written by this build. History:
     /// 1: no version field; action item owners saved as labels ("You").
     /// 2: action item owners saved by raw value ("you").
-    public static let currentSchemaVersion = 2
+    /// 3: the meeting's languages (`language`).
+    public static let currentSchemaVersion = 3
 
     public let id: UUID
     /// Format version of the saved file. `SessionStore.save` writes the current one.
@@ -18,6 +19,9 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
     public var meetingInstructions: String
     /// What the user wants from this meeting. Every reply and question steers toward it.
     public var goal: String
+    /// What's spoken in the call and what replies and the recap are written in.
+    /// English (United States) for meetings saved before languages existed.
+    public var language: MeetingLanguage
     public var context: [ContextItem]
     public var turns: [TranscriptTurn]
     public var scripts: [ReplyScript]
@@ -38,6 +42,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         presetName: String,
         meetingInstructions: String = "",
         goal: String = "",
+        language: MeetingLanguage = .english,
         context: [ContextItem] = [],
         turns: [TranscriptTurn] = [],
         scripts: [ReplyScript] = [],
@@ -57,6 +62,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         self.presetName = presetName
         self.meetingInstructions = meetingInstructions
         self.goal = goal
+        self.language = language
         self.context = context
         self.turns = turns
         self.scripts = scripts
@@ -80,6 +86,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         presetName = try container.decode(String.self, forKey: .presetName)
         meetingInstructions = try container.decodeIfPresent(String.self, forKey: .meetingInstructions) ?? ""
         goal = try container.decodeIfPresent(String.self, forKey: .goal) ?? ""
+        language = try container.decodeIfPresent(MeetingLanguage.self, forKey: .language) ?? .english
         context = try container.decodeIfPresent([ContextItem].self, forKey: .context) ?? []
         turns = try container.decodeIfPresent([TranscriptTurn].self, forKey: .turns) ?? []
         scripts = try container.decodeIfPresent([ReplyScript].self, forKey: .scripts) ?? []

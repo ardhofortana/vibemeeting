@@ -268,7 +268,7 @@ private struct TranscriptHeader: View {
     @Environment(\.overlayDensity) private var density
 
     var body: some View {
-        let status = TranscriptStatus(session.status)
+        let status = TranscriptStatus(session.status, modelProgress: session.speechModelProgress)
         ColumnHeader(title: "Transcript", subtitle: "Live subtitles from the meeting") {
             VStack(spacing: 6) {
                 LevelWaveform(
@@ -304,7 +304,7 @@ private struct CompactStatusRow: View {
     @Environment(MeetingSession.self) private var session
 
     var body: some View {
-        let status = TranscriptStatus(session.status)
+        let status = TranscriptStatus(session.status, modelProgress: session.speechModelProgress)
         HStack(spacing: 8) {
             Text("Transcript")
                 .font(.system(size: 13, weight: .semibold))
@@ -332,10 +332,20 @@ private struct TranscriptStatus {
     let isLive: Bool
     let help: String
 
-    init(_ status: MeetingSession.Status) {
+    /// `modelProgress`: the call language's speech model is downloading (0 to 1).
+    init(_ status: MeetingSession.Status, modelProgress: Double? = nil) {
         switch status {
         case .starting:
-            self.init(caption: "Starting…", color: .orange, isLive: false, help: "Starting audio capture")
+            if let modelProgress {
+                self.init(
+                    caption: "Speech model \(Int((modelProgress * 100).rounded()))%",
+                    color: .orange,
+                    isLive: false,
+                    help: "Downloading the speech model for this meeting's language. It's needed once per language."
+                )
+            } else {
+                self.init(caption: "Starting…", color: .orange, isLive: false, help: "Starting audio capture")
+            }
         case .listening:
             self.init(caption: nil, color: .secondary, isLive: true, help: "Live audio. Above the line: the call. Below: your mic.")
         case .reconnecting:

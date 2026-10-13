@@ -155,7 +155,7 @@ public struct ReplyScript: Identifiable, Codable, Equatable, Sendable {
 
     /// True when the script asks the user to confirm a number before saying it.
     public var needsNumberConfirmation: Bool {
-        text.localizedCaseInsensitiveContains(ScriptText.confirmNumberMarker)
+        ScriptText.containsMarker(text)
     }
 }
 

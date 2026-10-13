@@ -2,12 +2,33 @@ import Foundation
 
 /// Text helpers for reply scripts.
 public enum ScriptText {
+    /// Put after a holding line when a number is missing. The model writes it
+    /// in English whatever the script's language: the app shows it as a
+    /// reminder, and the user doesn't say it.
     public static let confirmNumberMarker = "[confirm number]"
 
+    /// The marker as a model may write it: any case, "-" or "_" between the
+    /// words, full-width or lenticular brackets ("［confirm number］").
+    static let markerPattern = #"[\[［【]\s*confirm[\s_-]*number\s*[\]］】]"#
+
+    /// Question marks: "?", the full-width "？" (Chinese, Japanese) and the Arabic "؟".
+    static let questionMarks: Set<Character> = ["?", "？", "؟"]
+
+    /// The text with every way of writing the marker turned into `confirmNumberMarker`.
+    public static func normalizingMarkers(_ text: String) -> String {
+        text.replacingOccurrences(of: markerPattern, with: confirmNumberMarker, options: [.regularExpression, .caseInsensitive])
+    }
+
+    /// Whether the text has the marker, however it's written.
+    public static func containsMarker(_ text: String) -> Bool {
+        text.range(of: markerPattern, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
     /// Cleans up formatting the rules forbid but a model may still produce,
-    /// so the script reads as plain spoken text.
+    /// so the script reads as plain spoken text. The marker comes out in its
+    /// one form, so it can be found and highlighted.
     public static func sanitize(_ text: String) -> String {
-        var lines = text.components(separatedBy: .newlines).map { line -> String in
+        var lines = normalizingMarkers(text).components(separatedBy: .newlines).map { line -> String in
             var line = line.trimmingCharacters(in: .whitespaces)
             for prefix in ["- ", "• ", "* ", "# ", "## ", "### "] where line.hasPrefix(prefix) {
                 line.removeFirst(prefix.count)
@@ -53,7 +74,7 @@ public enum ScriptText {
             line = sanitize(line)
             guard !line.isEmpty, !line.hasSuffix(":") else { continue }
             let beingWritten = !final && index == lines.count - 1
-            if line.contains("?") || beingWritten {
+            if line.contains(where: questionMarks.contains) || beingWritten {
                 questions.append(line)
             } else {
                 others.append(line)

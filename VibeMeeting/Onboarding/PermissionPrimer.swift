@@ -1,4 +1,5 @@
 import Foundation
+import VibeCore
 
 /// Triggers the permission prompts and the speech model download up front,
 /// so the first meeting doesn't stall on them.
@@ -10,6 +11,8 @@ enum PermissionPrimer {
         var systemAudioStatus: SystemAudioPermission.Status
         var speechModel: Bool
         var speechError: String?
+        /// The call language whose model was downloaded (BCP 47).
+        var speechLocale: String
 
         var summary: String {
             var parts: [String] = []
@@ -24,12 +27,14 @@ enum PermissionPrimer {
                     ? "System audio: requested. If macOS asked, choose Allow."
                     : "System audio: couldn't start. Check System Settings → Privacy & Security → Screen & System Audio Recording.")
             }
-            parts.append(speechModel ? "English speech model: ready." : "English speech model: \(speechError ?? "not available").")
+            let language = MeetingLanguage.displayName(of: speechLocale)
+            parts.append(speechModel ? "Speech model for \(language): ready." : "Speech model for \(language): \(speechError ?? "not available").")
             return parts.joined(separator: "\n")
         }
     }
 
-    static func run() async -> Result {
+    /// `locale` is the default call language; its speech model is downloaded.
+    static func run(locale: String, onModelProgress: LiveTranscriber.ProgressHandler? = nil) async -> Result {
         let microphone = await MicrophoneCapture.requestPermission()
 
         _ = await SystemAudioPermission.request()
@@ -48,7 +53,7 @@ enum PermissionPrimer {
         var speechModel = true
         var speechError: String?
         do {
-            try await LiveTranscriber.prepareAssets()
+            try await LiveTranscriber.prepareAssets(for: Locale(identifier: locale), onProgress: onModelProgress)
         } catch {
             speechModel = false
             speechError = error.localizedDescription
@@ -58,7 +63,8 @@ enum PermissionPrimer {
             systemAudio: systemAudio,
             systemAudioStatus: SystemAudioPermission.status,
             speechModel: speechModel,
-            speechError: speechError
+            speechError: speechError,
+            speechLocale: locale
         )
     }
 }

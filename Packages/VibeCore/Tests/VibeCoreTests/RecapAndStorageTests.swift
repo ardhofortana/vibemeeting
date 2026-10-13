@@ -182,12 +182,12 @@ final class SessionStoreTests: XCTestCase {
         let store = try SessionStore(directory: directory)
         let record = MeetingRecord(name: "New", presetID: "p", presetName: "P", recap: Recap(summary: "S", actionItems: [.init(task: "Send it", owner: .you)]), replyModel: "m")
         XCTAssertEqual(record.schemaVersion, MeetingRecord.currentSchemaVersion)
-        XCTAssertEqual(MeetingRecord.currentSchemaVersion, 2)
+        XCTAssertEqual(MeetingRecord.currentSchemaVersion, 3)
         XCTAssertFalse(record.isFromNewerVersion)
 
         // A file from before versioning: no schemaVersion, owners saved as labels.
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
-        XCTAssertEqual(json["schemaVersion"] as? Int, 2)
+        XCTAssertEqual(json["schemaVersion"] as? Int, MeetingRecord.currentSchemaVersion)
         json.removeValue(forKey: "schemaVersion")
         var recap = try XCTUnwrap(json["recap"] as? [String: Any])
         recap["action_items"] = [["task": "Send it", "owner": "You", "due": ""], ["task": "Reply", "owner": "Them", "due": "Monday"]]
@@ -211,8 +211,9 @@ final class SessionStoreTests: XCTestCase {
     func testMeetingFromNewerVersionOpensReadOnlyAndIsNeverOverwritten() throws {
         let store = try SessionStore(directory: directory)
         let record = MeetingRecord(name: "From the future", presetID: "p", presetName: "P", replyModel: "m")
+        let future = MeetingRecord.currentSchemaVersion + 1
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
-        json["schemaVersion"] = 3
+        json["schemaVersion"] = future
         json["participants"] = ["Alex", "Kim"]
         let original = try JSONSerialization.data(withJSONObject: json)
         try original.write(to: store.url(for: record.id))
@@ -221,13 +222,13 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(loaded.records.map(\.id), [record.id])
         XCTAssertTrue(loaded.unreadable.isEmpty)
         let newer = try XCTUnwrap(loaded.records.first)
-        XCTAssertEqual(newer.schemaVersion, 3)
+        XCTAssertEqual(newer.schemaVersion, future)
         XCTAssertTrue(newer.isFromNewerVersion)
 
         var renamed = newer
         renamed.name = "Renamed"
         XCTAssertThrowsError(try store.save(renamed)) { error in
-            XCTAssertEqual(error as? SessionStore.Failure, .savedByNewerVersion(schemaVersion: 3))
+            XCTAssertEqual(error as? SessionStore.Failure, .savedByNewerVersion(schemaVersion: future))
         }
         // The file keeps what this version doesn't know about.
         XCTAssertEqual(try Data(contentsOf: store.url(for: record.id)), original)
@@ -247,7 +248,7 @@ final class SessionStoreTests: XCTestCase {
         try Data("secret pricing notes {".utf8).write(to: damaged)
         // From a newer version that changed a field's type.
         var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(MeetingRecord(name: "Future", presetID: "p", presetName: "P", replyModel: "m"))) as? [String: Any])
-        json["schemaVersion"] = 5
+        json["schemaVersion"] = MeetingRecord.currentSchemaVersion + 2
         json["turns"] = "secret transcript"
         let future = directory.appendingPathComponent("\(UUID().uuidString).json")
         try JSONSerialization.data(withJSONObject: json).write(to: future)
@@ -270,7 +271,7 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(Set(loaded.unreadable.map(\.url.lastPathComponent)), [damaged.lastPathComponent, future.lastPathComponent, unknownSpeaker.lastPathComponent])
 
         let futureFile = try XCTUnwrap(loaded.unreadable.first { $0.url.lastPathComponent == future.lastPathComponent })
-        XCTAssertEqual(futureFile.schemaVersion, 5)
+        XCTAssertEqual(futureFile.schemaVersion, MeetingRecord.currentSchemaVersion + 2)
         XCTAssertTrue(futureFile.isFromNewerVersion)
         XCTAssertTrue(futureFile.reason.contains("turns"), futureFile.reason)
 

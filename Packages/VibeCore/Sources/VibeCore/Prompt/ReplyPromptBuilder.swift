@@ -8,13 +8,16 @@ public struct MeetingPromptContext: Equatable, Sendable {
     public var meetingInstructions: String
     /// What the user wants from the meeting (empty when not set).
     public var goal: String
+    /// The call language and the language scripts and questions are written in.
+    public var language: MeetingLanguage
 
-    public init(aboutMe: String, context: [ContextItem], preset: StylePreset, meetingInstructions: String, goal: String = "") {
+    public init(aboutMe: String, context: [ContextItem], preset: StylePreset, meetingInstructions: String, goal: String = "", language: MeetingLanguage = .english) {
         self.aboutMe = aboutMe
         self.context = context
         self.preset = preset
         self.meetingInstructions = meetingInstructions
         self.goal = goal
+        self.language = language
     }
 }
 
@@ -70,7 +73,7 @@ public struct ReplyAsk: Equatable, Sendable {
 ///
 /// Layout:
 /// - system: output rules, About me ← breakpoint (shared by every meeting)
-/// - user: meeting context ← breakpoint, reply style and goal ← breakpoint, the earlier
+/// - user: meeting context ← breakpoint, reply style, language and goal ← breakpoint, the earlier
 ///   transcript one block per chunk ← breakpoint on the last chunk, then the
 ///   uncached recent transcript and request.
 ///
@@ -124,7 +127,7 @@ public struct ReplyPromptBuilder: Sendable {
     func cachedMeetingBlocks(_ meeting: MeetingPromptContext) -> [ContentBlock] {
         var blocks = Self.contextBlocks(meeting.context)
         blocks[blocks.count - 1] = blocks[blocks.count - 1].withCache(.ephemeral)
-        blocks.append(.text(Self.styleText(preset: meeting.preset, meetingInstructions: meeting.meetingInstructions, goal: meeting.goal), cache: .ephemeral))
+        blocks.append(.text(Self.styleText(preset: meeting.preset, meetingInstructions: meeting.meetingInstructions, goal: meeting.goal, language: meeting.language), cache: .ephemeral))
         return blocks
     }
 
@@ -166,13 +169,17 @@ public struct ReplyPromptBuilder: Sendable {
         return blocks
     }
 
-    static func styleText(preset: StylePreset, meetingInstructions: String, goal: String = "") -> String {
+    /// The per-meeting block: reply style, languages, meeting instructions and goal.
+    /// The languages live here, not in the fixed rules, so the rules stay one
+    /// cached prefix for every meeting.
+    static func styleText(preset: StylePreset, meetingInstructions: String, goal: String = "", language: MeetingLanguage = .english) -> String {
         var text = """
         <reply_style name="\(escapeAttribute(preset.name))">
         \(preset.instructions.trimmingCharacters(in: .whitespacesAndNewlines))
         Length: \(preset.minSentences == preset.maxSentences ? "\(preset.minSentences)" : "\(preset.minSentences) to \(preset.maxSentences)") sentence\(preset.maxSentences == 1 ? "" : "s").
         </reply_style>
         """
+        text += "\n" + languageText(language)
         let extra = meetingInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
         if !extra.isEmpty {
             text += "\n<meeting_instructions>\n\(extra)\n</meeting_instructions>"
@@ -182,6 +189,22 @@ public struct ReplyPromptBuilder: Sendable {
             text += "\n<meeting_goal>\n\(goal)\n</meeting_goal>"
         }
         return text
+    }
+
+    /// The call language and the language to write scripts and questions in.
+    static func languageText(_ language: MeetingLanguage) -> String {
+        """
+        <language>
+        The call is in \(describe(language.callLocale)).
+        Write the script and any questions in \(describe(language.script)).
+        </language>
+        """
+    }
+
+    /// "German (Germany), de-DE": the English name for the model, the identifier to be exact.
+    static func describe(_ identifier: String) -> String {
+        let name = MeetingLanguage.englishName(of: identifier)
+        return name == identifier ? identifier : "\(name), \(identifier)"
     }
 
     /// The older transcript, one text block per chunk, cached at the last one.

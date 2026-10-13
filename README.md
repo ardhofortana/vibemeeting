@@ -36,11 +36,11 @@ Lalu Run (⌘R). Ikon gelombang akan muncul di menu bar.
 
 ### Audio check
 
-Menu bar → **Audio check…** menjalankan seluruh jalur audio → transkripsi tanpa meeting. Putar video YouTube berbahasa Inggris dan ucapkan beberapa kalimat bahasa Inggris. Kedua kolom (Them dan You) harus menunjukkan level dan teks dalam satu-dua detik. **Copy report** menyalin diagnostik (format audio, jumlah buffer, error, status izin, tanda tangan build) tanpa isi transkrip. Saat meeting berjalan, diagnostik yang sama ada di tombol stetoskop di overlay.
+Menu bar → **Audio check…** menjalankan seluruh jalur audio → transkripsi tanpa meeting. Putar video YouTube dalam bahasa panggilan default (Settings → General → Call language) dan ucapkan beberapa kalimat dalam bahasa itu. Kedua kolom (Them dan You) harus menunjukkan level dan teks dalam satu-dua detik. **Copy report** menyalin diagnostik (format audio, jumlah buffer, error, status izin, tanda tangan build) tanpa isi transkrip. Saat meeting berjalan, diagnostik yang sama ada di tombol stetoskop di overlay.
 
 Saat pertama kali dibuka, jendela Welcome memandu tiga hal:
 
-1. **Allow audio capture.** macOS akan meminta izin mikrofon dan izin rekam audio sistem, lalu model speech bahasa Inggris on-device diunduh.
+1. **Allow audio capture.** macOS akan meminta izin mikrofon dan izin rekam audio sistem, lalu model speech on-device untuk bahasa panggilan diunduh. Bahasa default-nya adalah bahasa pertama di Mac-mu yang didukung speech recognition (kalau tidak ada, English (United States)); ganti di Settings → General, atau per meeting di New meeting.
 2. **API key Claude.** Key disimpan di Keychain.
 3. **About me.** Kosong di awal. Settings → About me menampilkan outline yang perlu diisi: nama, pekerjaanmu, siapa yang biasa kamu temui, kesan yang ingin kamu berikan, fakta yang boleh dipakai di jawaban, dan hal yang tidak pernah kamu katakan. Boleh ditulis dalam bahasa apa pun.
 
@@ -74,7 +74,7 @@ PRD v1 menetapkan M0 sebagai spike untuk bagian paling berisiko. Kodenya sudah a
    ANTHROPIC_API_KEY=sk-ant-... swift run vibe-latency --model claude-haiku-5-5 --model claude-opus-5-5
    ```
    Target: kata pertama ≤1,5 detik (median) dan ≤3 detik (p90), script lengkap ≤4 detik. Pakai `--context proposal.txt` dan `--about about.txt` untuk mengetes dengan konteks asli. Biaya satu run kira-kira beberapa sen.
-3. **Audio lawan bicara:** buka **Audio check**, putar video YouTube, lalu pastikan teks **Them** muncul dalam ≤1 detik. Transkripsi hanya untuk bahasa Inggris.
+3. **Audio lawan bicara:** buka **Audio check**, putar video YouTube, lalu pastikan teks **Them** muncul dalam ≤1 detik. Transkripsi memakai bahasa panggilan meeting itu (dipilih di New meeting); script, Ask questions, dan rekap ikut bahasa itu kecuali dipilih lain.
 4. **Echo tanpa headset:** pakai speaker laptop dan pastikan suara lawan tidak muncul sebagai **You**. Bila masih bocor, pakai headset atau cek Settings → Audio.
 5. **Hotkey:** coba setiap hotkey saat Zoom atau Chrome sedang fokus. Bila ⌥R/⌥S/⌥H kadang malah mengetik karakter (macOS 26 bisa menyusun ⌥+huruf menjadi karakter seperti ®), ganti ke ⌃⌥R dan seterusnya.
 6. **Beban sistem:** pantau CPU di Activity Monitor selama call 30 menit.

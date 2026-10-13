@@ -76,8 +76,11 @@ final class MeetingSession: Identifiable {
 
     let id: UUID
     private(set) var record: MeetingRecord
-    private(set) var transcript = TranscriptStore()
+    private(set) var transcript: TranscriptStore
     private(set) var status: Status = .starting
+    /// Download progress (0 to 1) of the call language's speech model while
+    /// starting, when it isn't on this Mac yet.
+    private(set) var speechModelProgress: Double?
     private(set) var preset: StylePreset
     var selectedTurnID: UUID?
     var steerText = ""
@@ -94,8 +97,8 @@ final class MeetingSession: Identifiable {
     private let settings: AppSettings
     private let store: SessionStore
     private let transport: ClaudeTransport
-    /// Audio capture and transcription for both streams.
-    let pipeline = CapturePipeline()
+    /// Audio capture and transcription for both streams, in the call language.
+    let pipeline: CapturePipeline
 
     @ObservationIgnored private var tickTask: Task<Void, Never>?
     @ObservationIgnored private var replyTask: Task<Void, Never>?
@@ -131,6 +134,9 @@ final class MeetingSession: Identifiable {
     init(record: MeetingRecord, preset: StylePreset, settings: AppSettings, store: SessionStore, transport: ClaudeTransport) {
         self.id = record.id
         self.record = record
+        // The echo filter's English-tuned rules only run for an English call.
+        self.transcript = TranscriptStore(configuration: .init(language: record.language.callLocale))
+        self.pipeline = CapturePipeline(locale: Locale(identifier: record.language.callLocale))
         self.preset = preset
         self.settings = settings
         self.store = store
@@ -153,9 +159,11 @@ final class MeetingSession: Identifiable {
 
         pipeline.onUpdate = { [weak self] update in self?.apply(update) }
         pipeline.onEvent = { [weak self] event in self?.handle(event) }
+        pipeline.onModelProgress = { [weak self] fraction in self?.speechModelProgress = fraction }
         tappedBundleID = settings.audioSourceBundleID
         let source: SystemAudioTap.Source = tappedBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
         await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing, echoGate: settings.suppressSpeakerBleed))
+        speechModelProgress = nil
         guard status == .starting else { return }
 
         status = .listening
@@ -320,7 +328,8 @@ final class MeetingSession: Identifiable {
             context: record.context,
             preset: preset,
             meetingInstructions: record.meetingInstructions,
-            goal: record.goal
+            goal: record.goal,
+            language: record.language
         )
     }
 
@@ -691,7 +700,7 @@ final class MeetingSession: Identifiable {
             addNotice(kind, "\(label): audio is captured, but speech recognition only receives silence. Open the stethoscope and copy the report.")
         } else if snapshot.speechLevelChunks >= 100 {
             // About 10 s of speech-level audio reached the recognizer with no result.
-            addNotice(kind, "\(label): speech recognition hears speech but returns no words. VibeMeeting transcribes English (en-US) only.")
+            addNotice(kind, "\(label): speech recognition hears speech but returns no words. This meeting transcribes \(MeetingLanguage.displayName(of: record.language.callLocale)); for a call in another language, start a new meeting with that language.")
         }
     }
 

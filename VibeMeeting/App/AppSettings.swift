@@ -32,6 +32,7 @@ final class AppSettings {
         static let audioSourceBundleID = "audioSourceBundleID"
         static let voiceProcessing = "voiceProcessing"
         static let echoGate = "suppressSpeakerBleed"
+        static let callLocale = "callLocale"
         static let onboarded = "hasCompletedOnboarding"
     }
 
@@ -53,6 +54,9 @@ final class AppSettings {
     var voiceProcessing: Bool { didSet { defaults.set(voiceProcessing, forKey: Key.voiceProcessing) } }
     /// Mute the mic where it only carries the call's voice from the speakers.
     var suppressSpeakerBleed: Bool { didSet { defaults.set(suppressSpeakerBleed, forKey: Key.echoGate) } }
+    /// The call language for new meetings (BCP 47). nil follows the Mac's
+    /// preferred languages: see `SpeechLanguages.automaticCallLocale`.
+    var callLocaleID: String? { didSet { defaults.set(callLocaleID, forKey: Key.callLocale) } }
     var hasCompletedOnboarding: Bool { didSet { defaults.set(hasCompletedOnboarding, forKey: Key.onboarded) } }
 
     /// Mirrors whether a key is stored, so views update when it changes.
@@ -81,6 +85,7 @@ final class AppSettings {
         // Bluetooth or USB headphones (the headphone jack may drive speakers).
         voiceProcessing = defaults.object(forKey: Key.voiceProcessing) as? Bool ?? false
         suppressSpeakerBleed = defaults.object(forKey: Key.echoGate) as? Bool ?? true
+        callLocaleID = defaults.string(forKey: Key.callLocale)
         hasCompletedOnboarding = defaults.bool(forKey: Key.onboarded)
         hasAPIKey = !(KeychainStore.read(account: KeychainStore.apiKeyAccount) ?? "").isEmpty
     }

@@ -14,6 +14,8 @@ final class AppModel {
     @ObservationIgnored private(set) lazy var windows = WindowManager(app: self)
     /// The Audio check window's pipeline, stopped whenever a meeting starts.
     let audioCheck = AudioCheckModel()
+    /// Call languages speech recognition offers, and their models.
+    let languages = SpeechLanguages()
 
     private(set) var records: [MeetingRecord] = []
     /// Saved meeting files that couldn't be read (newer version or damaged). They stay on disk untouched.
@@ -45,6 +47,7 @@ final class AppModel {
             Log.app.error("Can't read saved meeting \(file.url.lastPathComponent, privacy: .public): \(file.reason, privacy: .public)")
         }
         Hotkeys.install(app: self)
+        Task { await languages.refresh() }
     }
 
     /// First-launch onboarding.
@@ -54,6 +57,12 @@ final class AppModel {
         }
     }
 
+    /// The call language for a new meeting: the one picked in Settings, else
+    /// the first of the Mac's languages that speech recognition supports.
+    var defaultCallLocale: String {
+        settings.callLocaleID ?? languages.automaticCallLocale
+    }
+
     func record(id: UUID) -> MeetingRecord? {
         if let activeSession, activeSession.id == id { return activeSession.record }
         return records.first { $0.id == id }
@@ -61,7 +70,8 @@ final class AppModel {
 
     // MARK: - Meetings
 
-    func startMeeting(name: String, goal: String = "", context: [ContextItem], preset: StylePreset, instructions: String) async {
+    /// `language` nil uses the default call language, with replies and the recap in it too.
+    func startMeeting(name: String, goal: String = "", language: MeetingLanguage? = nil, context: [ContextItem], preset: StylePreset, instructions: String) async {
         if let previous = activeSession {
             let previousID = previous.id
             let wasActive = previous.isActive
@@ -85,6 +95,7 @@ final class AppModel {
             presetName: preset.name,
             meetingInstructions: instructions.trimmingCharacters(in: .whitespacesAndNewlines),
             goal: goal.trimmingCharacters(in: .whitespacesAndNewlines),
+            language: language ?? MeetingLanguage(callLocale: defaultCallLocale),
             context: context,
             replyModel: settings.replyModelID
         )

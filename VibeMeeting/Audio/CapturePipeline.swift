@@ -3,8 +3,8 @@ import Foundation
 import VibeCore
 
 /// Both audio streams end to end: system audio → "Them" transcriber, mic →
-/// "You" transcriber, with level meters and diagnostics. Used by a meeting and
-/// by the Audio check window.
+/// "You" transcriber, with level meters and diagnostics. Both transcribe the
+/// one call language. Used by a meeting and by the Audio check window.
 @MainActor
 final class CapturePipeline {
     enum Event {
@@ -45,6 +45,8 @@ final class CapturePipeline {
     /// follow the same convention on every device, and a gate that never arms
     /// only leaves duplicates the text filter still catches.
     let echoGate = EchoGate(configuration: .init(minLag: -0.05))
+    /// The call language both streams are transcribed in.
+    let locale: Locale
 
     private let systemTap: SystemAudioTap
     private let mic: MicrophoneCapture
@@ -57,12 +59,17 @@ final class CapturePipeline {
     /// Recognizer output, in order, on the main actor.
     var onUpdate: ((TranscriptUpdate) -> Void)?
     var onEvent: ((Event) -> Void)?
+    /// Speech model download progress (0 to 1) while starting, when the call
+    /// language's model isn't on this Mac yet.
+    var onModelProgress: ((Double) -> Void)?
 
-    init() {
+    /// `locale` is the call language, for both streams.
+    init(locale: Locale) {
+        self.locale = locale
         systemTap = SystemAudioTap(diagnostics: themDiagnostics)
         mic = MicrophoneCapture(diagnostics: youDiagnostics)
-        themTranscriber = LiveTranscriber(speaker: .them, diagnostics: themDiagnostics)
-        youTranscriber = LiveTranscriber(speaker: .you, diagnostics: youDiagnostics)
+        themTranscriber = LiveTranscriber(speaker: .them, locale: locale, diagnostics: themDiagnostics)
+        youTranscriber = LiveTranscriber(speaker: .you, locale: locale, diagnostics: youDiagnostics)
     }
 
     /// Starts transcription first (so no audio is lost), then capture. A failure
@@ -107,6 +114,7 @@ final class CapturePipeline {
     /// before stopping without waiting on any system service.
     func streamReportLines() -> [String] {
         var lines = [
+            "call language: \(locale.identifier(.bcp47))",
             "mic route: \(mic.routeSummary)",
             "voice processing active: \(mic.voiceProcessingActive)",
             "voice processing off because: \(mic.voiceProcessingOffReason ?? "–")",
@@ -153,6 +161,9 @@ final class CapturePipeline {
                 },
                 onError: { [weak self] error in
                     self?.onEvent?(.transcriberFailed(speaker, error))
+                },
+                onModelProgress: { [weak self] fraction in
+                    self?.onModelProgress?(fraction)
                 }
             )
             return true

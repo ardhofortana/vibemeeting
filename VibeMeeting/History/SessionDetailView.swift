@@ -137,6 +137,7 @@ struct SessionDetailView: View {
         var parts = [record.startedAt.formatted(date: .complete, time: .shortened)]
         if let duration = record.duration { parts.append(Recap.formatDuration(duration)) }
         parts.append(record.presetName)
+        parts.append(MeetingLanguage.displayName(of: record.language.callLocale))
         if isLive { parts.append(app.activeSession?.isActive == true ? "In progress" : "Saving…") }
         return parts.joined(separator: " · ")
     }

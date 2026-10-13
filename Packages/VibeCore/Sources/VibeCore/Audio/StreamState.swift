@@ -42,6 +42,8 @@ public enum TranscriberState: Equatable, Sendable {
     case notStarted
     case checkingModel
     case preparingModel
+    /// Downloading the speech model for the call language, this far (0–100).
+    case downloadingModel(percent: Int)
     case startingAnalyzer
     /// Recognizing speech in this locale (BCP 47, e.g. "en-US").
     case running(locale: String)
@@ -62,6 +64,7 @@ public enum TranscriberState: Equatable, Sendable {
         case .notStarted: return "Not started"
         case .checkingModel: return "Checking speech model"
         case .preparingModel: return "Preparing speech model"
+        case .downloadingModel(let percent): return "Downloading speech model (\(percent)%)"
         case .startingAnalyzer: return "Starting analyzer"
         case .running(let locale): return "Running (\(locale))"
         case .failedToStart: return "Failed to start"

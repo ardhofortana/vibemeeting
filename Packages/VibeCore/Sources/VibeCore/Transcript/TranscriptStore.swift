@@ -25,6 +25,11 @@ public struct TranscriptStore: Equatable, Sendable {
         public var backchannelMaxWords: Int
         /// Most "Them" turns merged into one reply target.
         public var maxMergedTargetTurns: Int
+        /// The call language (BCP 47). The garbled-echo rule (stems, sound keys,
+        /// English function words) is tuned on English speech and runs only for
+        /// English; other languages get the near-verbatim rule alone, so some
+        /// echo may stay, but none of the user's words are taken for it.
+        public var language: String
 
         public init(
             maxPauseWithinTurn: TimeInterval = 6,
@@ -32,7 +37,8 @@ public struct TranscriptStore: Equatable, Sendable {
             lateEchoWindow: TimeInterval = 2.5,
             lateGarbledEchoWindow: TimeInterval = 8,
             backchannelMaxWords: Int = 3,
-            maxMergedTargetTurns: Int = 4
+            maxMergedTargetTurns: Int = 4,
+            language: String = MeetingLanguage.fallbackCallLocale
         ) {
             self.maxPauseWithinTurn = maxPauseWithinTurn
             self.echoWindow = echoWindow
@@ -40,7 +46,11 @@ public struct TranscriptStore: Equatable, Sendable {
             self.lateGarbledEchoWindow = lateGarbledEchoWindow
             self.backchannelMaxWords = backchannelMaxWords
             self.maxMergedTargetTurns = maxMergedTargetTurns
+            self.language = language
         }
+
+        /// Whether the garbled-echo rule runs for this call language.
+        public var removesGarbledEcho: Bool { EchoFilter.handlesGarbledEcho(in: language) }
     }
 
     public private(set) var turns: [TranscriptTurn]
@@ -135,10 +145,11 @@ public struct TranscriptStore: Equatable, Sendable {
     /// `text` from the mic without what echoes "Them": nil when none of it does.
     /// Garbled runs only count while they're talking or just were (a user
     /// reading their words back afterwards isn't the speakers), and short ones
-    /// too in live text while they're talking.
+    /// too in live text while they're talking. Outside English, only a
+    /// near-verbatim copy counts.
     private func removingEcho(from text: String, kind: TranscriptUpdate.Kind, now: Date) -> String? {
         let reference = echoReference(now: now)
-        guard themIsTalking(now: now, within: configuration.lateEchoWindow) else {
+        guard configuration.removesGarbledEcho, themIsTalking(now: now, within: configuration.lateEchoWindow) else {
             return EchoFilter.isLikelyEcho(text, reference: reference) ? "" : nil
         }
         let live = kind == .volatile && themIsTalking(now: now, within: 0)
@@ -347,7 +358,9 @@ public struct TranscriptStore: Equatable, Sendable {
         for var segment in recentYouSegments {
             let isRecent = now.timeIntervalSince(segment.date) <= configuration.lateEchoWindow
             let garbledReference = isRecent ? reference : themText(startedBy: segment.date.addingTimeInterval(1), now: now)
-            var echoFree = segment.heardOverThem ? EchoFilter.removingGarbledEcho(from: segment.text, reference: garbledReference) : nil
+            var echoFree = segment.heardOverThem && configuration.removesGarbledEcho
+                ? EchoFilter.removingGarbledEcho(from: segment.text, reference: garbledReference)
+                : nil
             if echoFree == nil, themFinal, isRecent, EchoFilter.isLikelyEcho(segment.text, reference: reference) {
                 echoFree = ""
             }

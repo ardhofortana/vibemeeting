@@ -3,9 +3,9 @@ import Foundation
 import Speech
 import VibeCore
 
-/// On-device English transcription for one audio stream (Them or You), built on
-/// SpeechAnalyzer + SpeechTranscriber (macOS 26). Two instances run at once;
-/// same-locale transcribers share the backing engine.
+/// On-device transcription for one audio stream (Them or You) in the meeting's
+/// call language, built on SpeechAnalyzer + SpeechTranscriber (macOS 26). Two
+/// instances run at once in the same locale, so they share the backing engine.
 final class LiveTranscriber: @unchecked Sendable {
     enum Failure: Error, LocalizedError {
         case unsupportedLocale(String)
@@ -26,10 +26,12 @@ final class LiveTranscriber: @unchecked Sendable {
     /// Runs on the main actor; results are delivered one at a time, in order.
     typealias UpdateHandler = @MainActor @Sendable (TranscriptUpdate) -> Void
     typealias ErrorHandler = @MainActor @Sendable (Error) -> Void
-
-    static let preferredLocale = Locale(identifier: "en-US")
+    /// Speech model download progress, 0 to 1, on the main actor.
+    typealias ProgressHandler = @MainActor @Sendable (Double) -> Void
 
     let speaker: Speaker
+    /// The call language this stream is transcribed in.
+    let locale: Locale
     let diagnostics: StreamDiagnostics
     private let fold: MonoFold
     private let lock = NSLock()
@@ -38,6 +40,8 @@ final class LiveTranscriber: @unchecked Sendable {
     private var analyzerFormat: AVAudioFormat?
     private var accumulator: ChunkAccumulator?
     private var resultsTask: Task<Void, Never>?
+    /// The locale this transcriber marked as in use, until it stops.
+    private var localeInUse: String?
     /// Bumped by every start and stop (under `lock`). A start that finds it changed
     /// after its awaits was stopped meanwhile and must not install its analyzer.
     private var generation = 0
@@ -46,8 +50,9 @@ final class LiveTranscriber: @unchecked Sendable {
     /// RMS of a 100 ms chunk that counts as speech level (about -40 dBFS).
     static let speechLevelRMS: Float = 0.01
 
-    init(speaker: Speaker, diagnostics: StreamDiagnostics) {
+    init(speaker: Speaker, locale: Locale, diagnostics: StreamDiagnostics) {
         self.speaker = speaker
+        self.locale = locale
         self.diagnostics = diagnostics
         // Mic: channel 0 (voice processing exposes discrete channels). System audio: average L/R.
         self.fold = speaker == .you ? .firstChannel : .average
@@ -55,9 +60,8 @@ final class LiveTranscriber: @unchecked Sendable {
 
     // MARK: - Setup
 
-    /// The English transcriber and the exact locale the system supports for it.
-    static func makeTranscriber() async throws -> (transcriber: SpeechTranscriber, locale: Locale) {
-        let requested = preferredLocale
+    /// A transcriber for `requested` and the exact locale the system supports for it.
+    static func makeTranscriber(for requested: Locale) async throws -> (transcriber: SpeechTranscriber, locale: Locale) {
         guard SpeechTranscriber.isAvailable,
               let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested)
         else {
@@ -73,11 +77,29 @@ final class LiveTranscriber: @unchecked Sendable {
         return (transcriber, locale)
     }
 
-    /// Reserves the locale, downloads the model if needed, and waits until it's usable.
-    static func ensureAssets(for transcriber: SpeechTranscriber, locale: Locale) async throws {
+    /// Reserves the locale, downloads the model if needed (reporting progress),
+    /// and waits until it's usable.
+    static func ensureAssets(for transcriber: SpeechTranscriber, locale: Locale, onProgress: ProgressHandler? = nil) async throws {
         try await reserve(locale)
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-            try await request.downloadAndInstall()
+            let progress = request.progress
+            // Progress is read a few times a second while the download runs.
+            let reporter = onProgress.map { report in
+                Task {
+                    while !Task.isCancelled {
+                        await report(progress.fractionCompleted)
+                        try? await Task.sleep(for: .milliseconds(250))
+                    }
+                }
+            }
+            do {
+                try await request.downloadAndInstall()
+            } catch {
+                reporter?.cancel()
+                throw error
+            }
+            reporter?.cancel()
+            await onProgress?(1)
         }
         // downloadAndInstall() can return before the model is usable;
         // bestAvailableAudioFormat stays nil until it is.
@@ -88,7 +110,8 @@ final class LiveTranscriber: @unchecked Sendable {
         throw Failure.assetsNotReady
     }
 
-    /// Reservations are capped (5 measured) and persist across launches.
+    /// Reservations are capped (5 measured) and persist across launches. When
+    /// the cap is reached, one not used by a running transcriber makes room.
     private static func reserve(_ locale: Locale) async throws {
         let key = locale.identifier(.bcp47)
         let reserved = await AssetInventory.reservedLocales
@@ -97,20 +120,24 @@ final class LiveTranscriber: @unchecked Sendable {
             try await AssetInventory.reserve(locale: locale)
         } catch {
             guard reserved.count >= AssetInventory.maximumReservedLocales,
-                  let stale = reserved.first(where: { $0.identifier(.bcp47) != key })
+                  let stale = reserved.first(where: { $0.identifier(.bcp47) != key && !localesInUse.contains($0.identifier(.bcp47)) })
             else { throw error }
             await AssetInventory.release(reservedLocale: stale)
             try await AssetInventory.reserve(locale: locale)
         }
     }
 
-    /// Downloads the model up front (onboarding).
-    static func prepareAssets() async throws {
-        let (transcriber, locale) = try await makeTranscriber()
-        try await ensureAssets(for: transcriber, locale: locale)
+    /// Downloads the model for `locale` up front (onboarding, Settings).
+    static func prepareAssets(for locale: Locale, onProgress: ProgressHandler? = nil) async throws {
+        let (transcriber, supported) = try await makeTranscriber(for: locale)
+        try await ensureAssets(for: transcriber, locale: supported, onProgress: onProgress)
     }
 
-    func start(onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler) async throws {
+    /// Locales that running transcribers use, which a new reservation never releases.
+    private static let localesInUse = LocaleUsage()
+
+    /// Starts transcribing. `onModelProgress` hears about a speech model download, if one is needed.
+    func start(onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler, onModelProgress: ProgressHandler? = nil) async throws {
         let token: Int? = lock.withLock {
             guard analyzer == nil else { return nil }
             generation += 1
@@ -119,8 +146,9 @@ final class LiveTranscriber: @unchecked Sendable {
         guard let token else { return }
         diagnostics.update { $0.transcriberState = .checkingModel }
         do {
-            try await startAnalyzer(token: token, onUpdate: onUpdate, onError: onError)
+            try await startAnalyzer(token: token, onUpdate: onUpdate, onError: onError, onModelProgress: onModelProgress)
         } catch {
+            releaseLocale()
             diagnostics.update {
                 $0.transcriberState = .failedToStart
                 $0.lastError = Self.describe(error)
@@ -129,11 +157,15 @@ final class LiveTranscriber: @unchecked Sendable {
         }
     }
 
-    private func startAnalyzer(token: Int, onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler) async throws {
+    private func startAnalyzer(token: Int, onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler, onModelProgress: ProgressHandler?) async throws {
         let diagnostics = self.diagnostics
-        let (transcriber, locale) = try await Self.makeTranscriber()
+        let (transcriber, locale) = try await Self.makeTranscriber(for: self.locale)
+        markLocaleInUse(locale.identifier(.bcp47))
         diagnostics.update { $0.transcriberState = .preparingModel }
-        try await Self.ensureAssets(for: transcriber, locale: locale)
+        try await Self.ensureAssets(for: transcriber, locale: locale) { fraction in
+            diagnostics.update { $0.transcriberState = .downloadingModel(percent: Int((fraction * 100).rounded())) }
+            onModelProgress?(fraction)
+        }
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             throw Failure.noAudioFormat
         }
@@ -209,11 +241,29 @@ final class LiveTranscriber: @unchecked Sendable {
             continuation.finish()
             resultsTask.cancel()
             await analyzer.cancelAndFinishNow()
+            releaseLocale()
             diagnostics.update { $0.transcriberState = .stopped }
             return
         }
         diagnostics.update { $0.transcriberState = .running(locale: locale.identifier(.bcp47)) }
         Log.speech.info("Transcriber \(speaker.rawValue, privacy: .public) started, \(StreamDiagnostics.describe(format), privacy: .public)")
+    }
+
+    private func markLocaleInUse(_ key: String) {
+        let previous: String? = lock.withLock {
+            defer { localeInUse = key }
+            return localeInUse
+        }
+        if let previous { Self.localesInUse.remove(previous) }
+        Self.localesInUse.add(key)
+    }
+
+    private func releaseLocale() {
+        let key: String? = lock.withLock {
+            defer { localeInUse = nil }
+            return localeInUse
+        }
+        if let key { Self.localesInUse.remove(key) }
     }
 
     /// The analyzer finished on its own. It stops reading but doesn't end the input
@@ -320,6 +370,7 @@ final class LiveTranscriber: @unchecked Sendable {
             _ = await firstResult(within: 2) { await resultsTask.value }
             resultsTask.cancel()
         }
+        releaseLocale()
         diagnostics.update { $0.transcriberState = .stopped }
     }
 
@@ -332,5 +383,26 @@ final class LiveTranscriber: @unchecked Sendable {
         }
         let nsError = error as NSError
         return "\(nsError.localizedDescription) (\(nsError.domain) \(nsError.code))"
+    }
+}
+
+/// How many running transcribers use each locale (BCP 47).
+private final class LocaleUsage: @unchecked Sendable {
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    func add(_ key: String) {
+        lock.withLock { counts[key, default: 0] += 1 }
+    }
+
+    func remove(_ key: String) {
+        lock.withLock {
+            let count = counts[key, default: 0] - 1
+            counts[key] = count > 0 ? count : nil
+        }
+    }
+
+    func contains(_ key: String) -> Bool {
+        lock.withLock { counts[key] != nil }
     }
 }

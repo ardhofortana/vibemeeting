@@ -80,6 +80,8 @@ private struct GeneralSettings: View {
                     .foregroundStyle(.secondary)
             }
 
+            CallLanguageSection()
+
             Section("Models") {
                 ModelPicker(title: "Replies", selection: $settings.replyModelID)
                 Text("Replies need the fastest first word. Claude Haiku 5.5 runs with thinking off; Opus 5.5 can't turn thinking off and runs at low effort.")
@@ -132,6 +134,52 @@ private struct GeneralSettings: View {
         } catch {
             keyMessage = error.localizedDescription
         }
+    }
+}
+
+/// The default call language and its speech model.
+private struct CallLanguageSection: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        @Bindable var settings = app.settings
+        let languages = app.languages
+        let current = app.defaultCallLocale
+        Section {
+            Picker("Spoken in calls", selection: $settings.callLocaleID) {
+                Text("Automatic: \(MeetingLanguage.displayName(of: languages.automaticCallLocale))").tag(String?.none)
+                ForEach(languages.callLocaleOptions(including: settings.callLocaleID ?? languages.automaticCallLocale), id: \.self) { identifier in
+                    Text(MeetingLanguage.pickerName(of: identifier)).tag(String?.some(identifier))
+                }
+            }
+            LabeledContent("Speech model") {
+                if let progress = languages.downloads[current] {
+                    ProgressView(value: progress)
+                        .frame(width: 140)
+                } else if languages.isInstalled(current) {
+                    Label("On this Mac", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
+                    Button("Download now") { Task { await languages.download(current) } }
+                        .controlSize(.small)
+                }
+            }
+            if let error = languages.downloadErrors[current] {
+                Text(error).font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Call language")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("What people speak in your calls. Both sides are transcribed in it, and replies, Ask questions and recaps are written in it unless you pick another language in New meeting. The speech model downloads once per language, when you first use it. Automatic picks the first of your Mac's languages that speech recognition supports.")
+                if MeetingLanguage.isPreview(current) {
+                    Text(MeetingLanguage.previewNote)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .task { await languages.refresh() }
     }
 }
 
@@ -429,7 +477,7 @@ private struct AudioSettings: View {
     private func prime() async {
         priming = true
         defer { priming = false }
-        let result = await PermissionPrimer.run()
+        let result = await PermissionPrimer.run(locale: app.defaultCallLocale)
         primeMessage = result.summary
     }
 }

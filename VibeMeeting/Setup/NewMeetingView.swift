@@ -1,11 +1,16 @@
 import SwiftUI
 import VibeCore
 
-/// Quick setup right before a call: name, goal, context, reply style, instructions.
+/// Quick setup right before a call: name, goal, language, context, reply style, instructions.
 struct NewMeetingView: View {
     @Environment(AppModel.self) private var app
     @State private var name = ""
     @State private var goal = ""
+    /// nil: the default call language from Settings.
+    @State private var callLocale: String?
+    /// nil: the same as the call.
+    @State private var scriptLanguage: String?
+    @State private var recapLanguage: String?
     @State private var items: [ContextItem] = []
     @State private var notes = ""
     @State private var presetID: String?
@@ -35,6 +40,7 @@ struct NewMeetingView: View {
 
                     nameField
                     goalSection
+                    languageSection
                     contextSection
                     replyStyleSection
 
@@ -64,6 +70,7 @@ struct NewMeetingView: View {
         }
         .ignoresSafeArea(.container, edges: .top)
         .defaultFocus($focus, .name)
+        .task { await app.languages.refresh() }
         .onChange(of: goal) { _, value in
             if value.count > Self.goalLimit { goal = String(value.prefix(Self.goalLimit)) }
         }
@@ -118,6 +125,71 @@ struct NewMeetingView: View {
             }
             .padding(.horizontal, 2)
         }
+    }
+
+    private var languageSection: some View {
+        let call = callLocaleBinding.wrappedValue
+        return VStack(alignment: .leading, spacing: 10) {
+            GlassSectionHeader(title: "Language", systemImage: "globe")
+            VStack(spacing: 0) {
+                languageRow("Spoken in the call") {
+                    Picker("Spoken in the call", selection: callLocaleBinding) {
+                        ForEach(app.languages.callLocaleOptions(including: call), id: \.self) { identifier in
+                            Text(MeetingLanguage.pickerName(of: identifier)).tag(identifier)
+                        }
+                    }
+                }
+                Glass.divider.frame(height: 1)
+                languageRow("Replies and questions in") {
+                    writingLanguagePicker("Replies and questions in", selection: $scriptLanguage)
+                }
+                Glass.divider.frame(height: 1)
+                languageRow("Recap in") {
+                    writingLanguagePicker("Recap in", selection: $recapLanguage)
+                }
+            }
+            .glassCard()
+            Text(languageNote(call))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 2)
+        }
+    }
+
+    private func languageRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 13.5))
+            Spacer(minLength: 8)
+            content()
+                .labelsHidden()
+                .fixedSize()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private func writingLanguagePicker(_ title: String, selection: Binding<String?>) -> some View {
+        Picker(title, selection: selection) {
+            Text("Same as the call").tag(String?.none)
+            Divider()
+            ForEach(MeetingLanguage.sortedWritingLanguages, id: \.self) { identifier in
+                Text(MeetingLanguage.displayName(of: identifier)).tag(String?.some(identifier))
+            }
+        }
+    }
+
+    /// What the chosen call language means for this meeting.
+    private func languageNote(_ call: String) -> String {
+        var note = "Both sides are transcribed in this language. Replies, Ask questions and the recap follow it unless you pick another."
+        if !app.languages.isInstalled(call) {
+            note += " The speech model for \(MeetingLanguage.displayName(of: call)) downloads when the meeting starts (once per language)."
+        }
+        if MeetingLanguage.isPreview(call) {
+            note += " " + MeetingLanguage.previewNote
+        }
+        return note
     }
 
     private var contextSection: some View {
@@ -250,6 +322,13 @@ struct NewMeetingView: View {
             .fixedSize()
     }
 
+    private var callLocaleBinding: Binding<String> {
+        Binding(
+            get: { callLocale ?? app.defaultCallLocale },
+            set: { callLocale = $0 }
+        )
+    }
+
     private var presetBinding: Binding<String> {
         Binding(
             get: { presetID ?? app.settings.defaultPresetID },
@@ -263,12 +342,16 @@ struct NewMeetingView: View {
         let pending = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if !pending.isEmpty { context.append(.text(pending)) }
         let preset = app.settings.preset(id: presetBinding.wrappedValue)
+        let language = MeetingLanguage(callLocale: callLocaleBinding.wrappedValue, scriptLanguage: scriptLanguage, recapLanguage: recapLanguage)
         Task {
             app.windows.close("new-meeting")
-            await app.startMeeting(name: name, goal: goal, context: context, preset: preset, instructions: instructions)
+            await app.startMeeting(name: name, goal: goal, language: language, context: context, preset: preset, instructions: instructions)
             // Reset for next time; the window is reused.
             name = ""
             goal = ""
+            callLocale = nil
+            scriptLanguage = nil
+            recapLanguage = nil
             items = []
             notes = ""
             instructions = ""

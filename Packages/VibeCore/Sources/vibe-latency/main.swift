@@ -1,9 +1,11 @@
 // M0 latency check: runs sample scenarios through the real Reply prompt and
 // reports time to first token. Usage:
 //
-//   ANTHROPIC_API_KEY=sk-... swift run vibe-latency [--model ID]... [--trials N] [--context FILE] [--about FILE]
+//   ANTHROPIC_API_KEY=sk-... swift run vibe-latency [--model ID]... [--trials N] [--context FILE] [--about FILE] [--language ID]
 //
-// Defaults: Claude Haiku 5.5, 3 trials per scenario, built-in sample context.
+// Defaults: Claude Haiku 5.5, 3 trials per scenario, built-in sample context,
+// English (United States). --language sets the call language (BCP 47, e.g.
+// de-DE), so scripts come back in it; the sample scenarios stay English.
 
 import Foundation
 #if canImport(FoundationNetworking)
@@ -66,6 +68,7 @@ var models: [String] = []
 var trials = 3
 var contextText = sampleContext
 var aboutMe = sampleAboutMe
+var language = MeetingLanguage.english
 
 var arguments = Array(CommandLine.arguments.dropFirst())
 while !arguments.isEmpty {
@@ -82,8 +85,9 @@ while !arguments.isEmpty {
     case "--trials": trials = max(1, Int(value()) ?? 3)
     case "--context": contextText = (try? String(contentsOfFile: value(), encoding: .utf8)) ?? contextText
     case "--about": aboutMe = (try? String(contentsOfFile: value(), encoding: .utf8)) ?? aboutMe
+    case "--language": language = MeetingLanguage(callLocale: MeetingLanguage.normalized(value()))
     case "-h", "--help":
-        print("Usage: vibe-latency [--model ID]... [--trials N] [--context FILE] [--about FILE]")
+        print("Usage: vibe-latency [--model ID]... [--trials N] [--context FILE] [--about FILE] [--language ID]")
         exit(0)
     default:
         FileHandle.standardError.write(Data("Unknown argument \(flag)\n".utf8))
@@ -100,7 +104,7 @@ guard let apiKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !ap
 // MARK: - Run
 
 let client = ClaudeClient(apiKey: apiKey)
-let meeting = MeetingPromptContext(aboutMe: aboutMe, context: [.text(contextText, title: "proposal.txt")], preset: .friendlyPro, meetingInstructions: "")
+let meeting = MeetingPromptContext(aboutMe: aboutMe, context: [.text(contextText, title: "proposal.txt")], preset: .friendlyPro, meetingInstructions: "", language: language)
 
 func seconds(_ duration: Duration) -> Double {
     Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
@@ -113,7 +117,7 @@ func format(_ value: Double?) -> String {
 for modelID in models {
     let model = ClaudeModel.resolve(modelID)
     let builder = ReplyPromptBuilder(model: model)
-    print("\n=== \(model.displayName) (\(model.id)) ===")
+    print("\n=== \(model.displayName) (\(model.id)), \(MeetingLanguage.englishName(of: language.callLocale)) ===")
 
     do {
         let warm = try await client.warm(builder.warmupRequest(meeting: meeting))

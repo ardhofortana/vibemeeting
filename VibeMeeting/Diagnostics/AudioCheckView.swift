@@ -18,17 +18,23 @@ final class AudioCheckModel {
     private(set) var transcript = TranscriptStore()
     private(set) var events: [String] = []
     private(set) var pipeline: CapturePipeline?
+    /// The call language of the running check (BCP 47).
+    private(set) var locale: String?
+    /// Speech model download progress (0 to 1) while starting.
+    private(set) var modelProgress: Double?
     /// Bumped by start and stop, so a start waiting on a permission prompt gives up
     /// when stopped meanwhile (window closed, meeting started).
     @ObservationIgnored private var runID = 0
 
-    func start(settings: AppSettings) async {
+    /// Checks both streams in `locale`, the default call language.
+    func start(settings: AppSettings, locale: String) async {
         guard state == .idle else { return }
         runID &+= 1
         let run = runID
         state = .starting
-        transcript = TranscriptStore()
+        transcript = TranscriptStore(configuration: .init(language: locale))
         events = []
+        self.locale = locale
 
         if SystemAudioPermission.status == .unknown {
             let granted = await SystemAudioPermission.request()
@@ -39,12 +45,14 @@ final class AudioCheckModel {
         }
         guard run == runID else { return }
 
-        let pipeline = CapturePipeline()
+        let pipeline = CapturePipeline(locale: Locale(identifier: locale))
         pipeline.onUpdate = { [weak self] update in self?.transcript.apply(update) }
         pipeline.onEvent = { [weak self] event in self?.events.append(Self.describe(event)) }
+        pipeline.onModelProgress = { [weak self] fraction in self?.modelProgress = fraction }
         self.pipeline = pipeline
         let source: SystemAudioTap.Source = settings.audioSourceBundleID.map { .app(bundleID: $0) } ?? .allSystemAudio
         await pipeline.start(.init(source: source, voiceProcessing: settings.voiceProcessing, echoGate: settings.suppressSpeakerBleed))
+        modelProgress = nil
         guard run == runID else {
             // stop() ran while starting (e.g. a meeting began): tear down what started.
             await pipeline.stop()
@@ -100,6 +108,13 @@ struct AudioCheckView: View {
             }
             LabeledContent("System audio permission", value: SystemAudioPermission.status.label)
                 .font(.callout)
+            if app.activeSession?.isActive != true {
+                // The running check's language; when idle, the one the next check uses.
+                let locale = model.state == .idle ? app.defaultCallLocale : (model.locale ?? app.defaultCallLocale)
+                LabeledContent("Language", value: MeetingLanguage.displayName(of: locale))
+                    .font(.callout)
+                    .help("The default call language, set in Settings → General.")
+            }
             if let report = app.lastMeetingReport {
                 CopyButton(title: "Copy last meeting's report", text: report)
             }
@@ -118,14 +133,22 @@ struct AudioCheckView: View {
                         Button("Start check") {
                             // Never a second capture pipeline next to a meeting's.
                             guard app.activeSession?.isActive != true else { return }
-                            Task { await model.start(settings: app.settings) }
+                            Task { await model.start(settings: app.settings, locale: app.defaultCallLocale) }
                         }
                             .buttonStyle(.borderedProminent)
                     case .starting:
-                        ProgressView().controlSize(.small)
-                        Text("Starting… the speech model may download the first time.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        if let progress = model.modelProgress {
+                            ProgressView(value: progress)
+                                .frame(width: 120)
+                            Text("Downloading the speech model for \(MeetingLanguage.displayName(of: model.locale ?? app.defaultCallLocale))…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ProgressView().controlSize(.small)
+                            Text("Starting… the speech model may download the first time.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     case .running:
                         Button("Stop") { Task { await model.stop() } }
                     }
