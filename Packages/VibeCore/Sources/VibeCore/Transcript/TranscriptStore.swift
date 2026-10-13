@@ -14,6 +14,12 @@ public struct TranscriptStore: Equatable, Sendable {
         /// How long a "You" segment stays open to removal as echo when the
         /// "Them" recognizer delivers the same words after it.
         public var lateEchoWindow: TimeInterval
+        /// The same for garbled echo, for segments heard while "Them" was
+        /// talking: the mic recognizer can close its garbled copy several
+        /// seconds before the "Them" recognizer settles that sentence. Only
+        /// garbled runs count this late, so them repeating the user's words
+        /// back isn't taken for echo.
+        public var lateGarbledEchoWindow: TimeInterval
         /// "You" turns at or under this many words don't break up a "Them" turn
         /// when choosing the reply target ("yeah", "mm-hmm", "right").
         public var backchannelMaxWords: Int
@@ -24,12 +30,14 @@ public struct TranscriptStore: Equatable, Sendable {
             maxPauseWithinTurn: TimeInterval = 6,
             echoWindow: TimeInterval = 12,
             lateEchoWindow: TimeInterval = 2.5,
+            lateGarbledEchoWindow: TimeInterval = 8,
             backchannelMaxWords: Int = 3,
             maxMergedTargetTurns: Int = 4
         ) {
             self.maxPauseWithinTurn = maxPauseWithinTurn
             self.echoWindow = echoWindow
             self.lateEchoWindow = lateEchoWindow
+            self.lateGarbledEchoWindow = lateGarbledEchoWindow
             self.backchannelMaxWords = backchannelMaxWords
             self.maxMergedTargetTurns = maxMergedTargetTurns
         }
@@ -41,9 +49,18 @@ public struct TranscriptStore: Equatable, Sendable {
     private var recentThemText: [(date: Date, text: String)] = []
     /// "You" segments finalized in the last moments, checked again when the
     /// "Them" text they may have echoed arrives after them.
-    private var recentYouSegments: [(date: Date, turnID: UUID, text: String)] = []
-    /// Number of "You" segments dropped as speaker echo, for diagnostics.
+    private var recentYouSegments: [YouSegment] = []
+    /// Number of "You" segments dropped, in whole or in part, as speaker echo,
+    /// for diagnostics.
     public private(set) var droppedEchoSegments = 0
+
+    private struct YouSegment: Sendable {
+        var date: Date
+        var turnID: UUID
+        var text: String
+        /// "Them" was talking then, so it may be their words garbled.
+        var heardOverThem: Bool
+    }
 
     public init(turns: [TranscriptTurn] = [], configuration: Configuration = Configuration()) {
         self.turns = turns
@@ -57,7 +74,7 @@ public struct TranscriptStore: Equatable, Sendable {
     // MARK: - Recognizer input
 
     public mutating func apply(_ update: TranscriptUpdate, at now: Date = Date()) {
-        let text = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let speaker = update.speaker
 
         if speaker == .them {
@@ -76,15 +93,18 @@ public struct TranscriptStore: Equatable, Sendable {
             return
         }
 
-        // Their words heard again through the mic. Live text is held back too, so
-        // a double never flashes up.
-        if speaker == .you, EchoFilter.isLikelyEcho(text, reference: echoReference(now: now)) {
+        // Their words heard again through the mic: only the user's own words
+        // stay. Live text is filtered too, so a double never flashes up.
+        if speaker == .you, let kept = removingEcho(from: text, kind: update.kind, now: now) {
             if update.kind == .final { droppedEchoSegments += 1 }
-            if let index = openTurnIndex(for: speaker) {
-                turns[index].volatileText = ""
-                removeIfEmpty(at: index, speaker: speaker)
+            guard !kept.isEmpty else {
+                if let index = openTurnIndex(for: speaker) {
+                    turns[index].volatileText = ""
+                    removeIfEmpty(at: index, speaker: speaker)
+                }
+                return
             }
-            return
+            text = kept
         }
 
         let index = turnIndexForNewText(from: speaker, now: now)
@@ -97,12 +117,26 @@ public struct TranscriptStore: Equatable, Sendable {
         }
         turns[index].updatedAt = now
 
-        guard update.kind == .final else { return }
-        if speaker == .you {
-            recentYouSegments.append((now, turns[index].id, text))
-        } else {
+        if speaker == .them {
             removeLateEchoes(now: now)
+        } else if update.kind == .final {
+            pruneRecentYouSegments(now: now)
+            let heardOverThem = themIsTalking(now: now, within: configuration.lateEchoWindow)
+            recentYouSegments.append(YouSegment(date: now, turnID: turns[index].id, text: text, heardOverThem: heardOverThem))
         }
+    }
+
+    /// `text` from the mic without what echoes "Them": nil when none of it does.
+    /// Garbled runs only count while they're talking or just were (a user
+    /// reading their words back afterwards isn't the speakers), and short ones
+    /// too in live text while they're talking.
+    private func removingEcho(from text: String, kind: TranscriptUpdate.Kind, now: Date) -> String? {
+        let reference = echoReference(now: now)
+        guard themIsTalking(now: now, within: configuration.lateEchoWindow) else {
+            return EchoFilter.isLikelyEcho(text, reference: reference) ? "" : nil
+        }
+        let live = kind == .volatile && themIsTalking(now: now, within: 0)
+        return EchoFilter.removingEcho(from: text, reference: reference, live: live)
     }
 
     /// Closes all open turns, e.g. when the meeting ends. In-progress text is kept as final.
@@ -266,16 +300,40 @@ public struct TranscriptStore: Equatable, Sendable {
         return reference.joined(separator: " ")
     }
 
-    /// The "Them" recognizer can finish a phrase after the "You" recognizer did.
-    /// Check the "You" segments of the last moments again now that it's here.
-    /// (Only briefly: when they repeat the user's words later, that's not echo.)
+    /// Whether "Them" is talking, or was within `window`, so the mic may carry their voice.
+    private func themIsTalking(now: Date, within window: TimeInterval) -> Bool {
+        guard let turn = turns.last(where: { $0.speaker == .them }) else { return false }
+        return turn.isLive || now.timeIntervalSince(turn.updatedAt) <= window
+    }
+
+    /// Forgets "You" segments too old for a late echo check.
+    private mutating func pruneRecentYouSegments(now: Date) {
+        let configuration = configuration
+        recentYouSegments.removeAll { segment in
+            let age = now.timeIntervalSince(segment.date)
+            return age > configuration.lateEchoWindow
+                && !(segment.heardOverThem && age <= configuration.lateGarbledEchoWindow)
+        }
+    }
+
+    /// The "Them" recognizer can deliver a phrase after the "You" recognizer did.
+    /// Check the "You" segments of the last moments again whenever their text
+    /// changes and cut out what turns out to be echo: near-verbatim copies only
+    /// briefly (when they repeat the user's words later, that's not echo),
+    /// garbled runs only in segments heard while they were talking, a little
+    /// longer.
     private mutating func removeLateEchoes(now: Date) {
-        recentYouSegments.removeAll { now.timeIntervalSince($0.date) > configuration.lateEchoWindow }
+        pruneRecentYouSegments(now: now)
         guard !recentYouSegments.isEmpty else { return }
         let reference = echoReference(now: now)
-        var kept: [(date: Date, turnID: UUID, text: String)] = []
-        for segment in recentYouSegments {
-            guard EchoFilter.isLikelyEcho(segment.text, reference: reference),
+        var kept: [YouSegment] = []
+        for var segment in recentYouSegments {
+            var echoFree = segment.heardOverThem ? EchoFilter.removingGarbledEcho(from: segment.text, reference: reference) : nil
+            if echoFree == nil, now.timeIntervalSince(segment.date) <= configuration.lateEchoWindow,
+               EchoFilter.isLikelyEcho(segment.text, reference: reference) {
+                echoFree = ""
+            }
+            guard let remaining = echoFree,
                   let index = turns.firstIndex(where: { $0.id == segment.turnID }),
                   turns[index].editedText == nil,
                   let range = turns[index].finalText.range(of: segment.text, options: .backwards)
@@ -283,11 +341,16 @@ public struct TranscriptStore: Equatable, Sendable {
                 kept.append(segment)
                 continue
             }
-            var remaining = turns[index].finalText
-            remaining.removeSubrange(range)
-            turns[index].finalText = remaining.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            var finalText = turns[index].finalText
+            finalText.replaceSubrange(range, with: remaining)
+            turns[index].finalText = finalText.split(whereSeparator: \.isWhitespace).joined(separator: " ")
             droppedEchoSegments += 1
-            removeIfEmpty(at: index, speaker: .you)
+            if remaining.isEmpty {
+                removeIfEmpty(at: index, speaker: .you)
+            } else {
+                segment.text = remaining
+                kept.append(segment)
+            }
         }
         recentYouSegments = kept
     }

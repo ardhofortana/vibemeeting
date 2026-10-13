@@ -200,6 +200,99 @@ final class TranscriptStoreTests: XCTestCase {
         XCTAssertEqual(store.turns.map(\.speaker), [.you, .them])
     }
 
+    func testGarbledEchoNeverShows() {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .them, kind: .volatile, text: Bleed.them), at: at(0))
+        store.apply(.init(speaker: .you, kind: .volatile, text: "The recent Saudi effects involve women's healthies, the plane, strikes, and the latest"), at: at(1))
+        XCTAssertEqual(store.turns.map(\.speaker), [.them])
+        store.apply(.init(speaker: .them, kind: .final, text: Bleed.them), at: at(2))
+        store.apply(.init(speaker: .you, kind: .final, text: Bleed.echo), at: at(2.5))
+        XCTAssertEqual(store.turns.map(\.speaker), [.them])
+        XCTAssertEqual(store.droppedEchoSegments, 1)
+    }
+
+    func testGarbledLiveEchoNeverShowsWhileTheyTalk() {
+        var store = TranscriptStore()
+        let them = Bleed.them.split(separator: " ")
+        let echo = Bleed.echo.split(separator: " ")
+        for count in 3...echo.count {
+            let time = Double(count) * 0.3
+            store.apply(.init(speaker: .them, kind: .volatile, text: them.prefix(count + 2).joined(separator: " ")), at: at(time))
+            store.apply(.init(speaker: .you, kind: .volatile, text: echo.prefix(count).joined(separator: " ")), at: at(time + 0.1))
+            XCTAssertEqual(store.turns.map(\.speaker), [.them], store.turns.last?.text ?? "")
+        }
+    }
+
+    func testPartialEchoKeepsTheUsersWords() {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .them, kind: .final, text: Bleed.them), at: at(0))
+        store.apply(.init(speaker: .you, kind: .volatile, text: "Yeah okay. The recent Saudi effects involve women's healthies, the plane, strikes"), at: at(1))
+        XCTAssertEqual(store.turns.last?.text, "Yeah okay.")
+        store.apply(.init(speaker: .you, kind: .final, text: "Yeah okay. " + Bleed.echo), at: at(2))
+        XCTAssertEqual(store.turns.map(\.speaker), [.them, .you])
+        XCTAssertEqual(store.turns[1].text, "Yeah okay.")
+        XCTAssertEqual(store.droppedEchoSegments, 1)
+    }
+
+    func testEchoOfWhatTheySayNextIsRemovedWhenTheirTextArrives() throws {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .them, kind: .final, text: Bleed.them), at: at(0))
+        store.apply(.init(speaker: .them, kind: .volatile, text: "The politics are"), at: at(1))
+        store.apply(.init(speaker: .you, kind: .final, text: Bleed.echo + " " + Bleed.echoTail), at: at(2))
+        // Their next sentence isn't transcribed yet, so most of its echo shows for now.
+        let you = try XCTUnwrap(store.turns.last)
+        XCTAssertEqual(you.speaker, .you)
+        XCTAssertTrue(you.text.hasSuffix("overlapping conflicts, Saudi back in Guinness, government, against the houses, and how these ties are wrong, and the water, the US are on war."), you.text)
+        XCTAssertFalse(you.text.contains("effects"), you.text)
+
+        // Past the window for near-verbatim copies, within the one for garbled echo.
+        store.apply(.init(speaker: .them, kind: .final, text: Bleed.themNext), at: at(7))
+        XCTAssertEqual(store.turns.map(\.speaker), [.them])
+        XCTAssertEqual(store.droppedEchoSegments, 2)
+    }
+
+    func testThemRepeatingTheUsersLongLineKeepsIt() {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .you, kind: .final, text: "We'll need the product photos and the shipping rates for the new store by Friday, ideally."), at: at(0))
+        store.apply(.init(speaker: .them, kind: .final, text: "Okay, so you'll need the product photo and the shipping rate for the new store by Friday."), at: at(4))
+        XCTAssertEqual(store.turns.map(\.speaker), [.you, .them])
+        XCTAssertEqual(store.droppedEchoSegments, 0)
+    }
+
+    func testReadingBackTheirWordsAfterwardsIsKept() {
+        var store = TranscriptStore()
+        let request = "We're looking for someone to rebuild our WooCommerce store, migrate the products, and set up subscriptions for our coffee club."
+        let readBack = "Got it, so a rebuild of the WooCommerce store, product migration, and subscriptions for the coffee club. We've done that a lot."
+        XCTAssertNotNil(EchoFilter.removingEcho(from: readBack, reference: request), "looks garbled on its own")
+        store.apply(.init(speaker: .them, kind: .final, text: request), at: at(0))
+        store.apply(.init(speaker: .you, kind: .final, text: readBack), at: at(7))
+        XCTAssertEqual(store.turns.map(\.text), [request, readBack])
+    }
+
+    func testOwnWordsHeldBackLiveShowOnceFinal() {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .them, kind: .volatile, text: "So can you do it in two weeks"), at: at(0))
+        store.apply(.init(speaker: .you, kind: .volatile, text: "Yes, I can do it in two weeks"), at: at(1))
+        store.apply(.init(speaker: .you, kind: .final, text: "Yes, I can do it in two weeks, no problem."), at: at(2))
+        XCTAssertEqual(store.turns.last?.text, "Yes, I can do it in two weeks, no problem.")
+
+        // When they aren't talking, live text shows as it comes.
+        store.apply(.init(speaker: .them, kind: .final, text: "So can you do it in two weeks?"), at: at(3))
+        store.apply(.init(speaker: .you, kind: .volatile, text: "I can do it in two weeks"), at: at(10))
+        XCTAssertEqual(store.turns.last?.text, "I can do it in two weeks")
+    }
+
+    func testAnswerReusingTheirWordsIsKept() {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .them, kind: .final, text: "Can you do it in two weeks?"), at: at(0))
+        store.apply(.init(speaker: .you, kind: .final, text: "Yes, I can do it in two weeks, no problem."), at: at(2))
+        store.apply(.init(speaker: .them, kind: .volatile, text: "Great, so in two weeks"), at: at(3))
+        store.apply(.init(speaker: .them, kind: .final, text: "Great, so in two weeks we can launch."), at: at(4))
+        store.apply(.init(speaker: .you, kind: .final, text: "The recent Saudi attacks? I haven't read about them yet, sorry."), at: at(20))
+        XCTAssertEqual(store.turns.map(\.speaker), [.them, .you, .them, .you])
+        XCTAssertEqual(store.droppedEchoSegments, 0)
+    }
+
     func turns(_ count: Int, liveAt live: Int? = nil) -> [TranscriptTurn] {
         (0..<count).map { index in
             let speaker: Speaker = index.isMultiple(of: 2) ? .them : .you
@@ -245,33 +338,5 @@ final class TranscriptStoreTests: XCTestCase {
         store.finalizeAll(at: at(2))
         XCTAssertEqual(store.turns[0].text, "Thanks. Talk soon")
         XCTAssertFalse(store.turns[0].isLive)
-    }
-}
-
-final class EchoFilterTests: XCTestCase {
-    func testDetectsBleed() {
-        XCTAssertTrue(EchoFilter.isLikelyEcho("we can launch in two weeks", reference: "I think we can launch in two weeks, right?"))
-    }
-
-    func testIgnoresShortAndDifferentText() {
-        XCTAssertFalse(EchoFilter.isLikelyEcho("yeah", reference: "yeah sure"))
-        XCTAssertFalse(EchoFilter.isLikelyEcho("two weeks is too tight for this scope", reference: "we can launch in two weeks"))
-    }
-
-    func testAnswerThatReusesTheirPhraseIsNotEcho() {
-        XCTAssertFalse(EchoFilter.isLikelyEcho("I can do it in two weeks", reference: "Can you do it in two weeks?"))
-        XCTAssertFalse(EchoFilter.isLikelyEcho("Turn number 29 with some words.", reference: "Turn number 28 with some words."))
-    }
-
-    func testMisheardWordsStillMatch() {
-        XCTAssertTrue(EchoFilter.isLikelyEcho("we can lunch in two weaks", reference: "We can launch in two weeks."))
-        XCTAssertTrue(EchoFilter.similar("integration", "integrations"))
-        XCTAssertFalse(EchoFilter.similar("1200", "1300"), "numbers must match exactly")
-        XCTAssertFalse(EchoFilter.similar("the", "she"), "short words must match exactly")
-    }
-
-    func testThreeWordEchoNeedsExactRun() {
-        XCTAssertTrue(EchoFilter.isLikelyEcho("half that price", reference: "they quoted half that price"))
-        XCTAssertFalse(EchoFilter.isLikelyEcho("half the price", reference: "they quoted half that price"))
     }
 }
