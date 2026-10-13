@@ -1,23 +1,43 @@
 import AppKit
 import KeyboardShortcuts
+import Observation
 import SwiftUI
 import VibeCore
 
+enum SettingsTab: Hashable {
+    case general, aboutMe, replyStyles, hotkeys, audio, overlay
+}
+
+/// The tab Settings shows; `WindowManager.showSettings(tab:)` switches it, also
+/// while the window is open.
+@Observable
+final class SettingsNavigation {
+    var tab: SettingsTab = .general
+}
+
 struct SettingsView: View {
+    @Bindable var navigation: SettingsNavigation
+
     var body: some View {
-        TabView {
+        TabView(selection: $navigation.tab) {
             GeneralSettings()
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(SettingsTab.general)
             ProfileSettings()
                 .tabItem { Label("About me", systemImage: "person.crop.circle") }
+                .tag(SettingsTab.aboutMe)
             PresetSettings()
                 .tabItem { Label("Reply styles", systemImage: "text.quote") }
+                .tag(SettingsTab.replyStyles)
             HotkeySettings()
                 .tabItem { Label("Hotkeys", systemImage: "keyboard") }
+                .tag(SettingsTab.hotkeys)
             AudioSettings()
                 .tabItem { Label("Audio", systemImage: "waveform") }
+                .tag(SettingsTab.audio)
             OverlaySettings()
                 .tabItem { Label("Overlay", systemImage: "macwindow") }
+                .tag(SettingsTab.overlay)
         }
         .padding(20)
     }

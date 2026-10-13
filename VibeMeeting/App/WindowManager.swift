@@ -9,6 +9,7 @@ import SwiftUI
 final class WindowManager: NSObject, NSWindowDelegate {
     private unowned let app: AppModel
     private var windows: [String: NSWindow] = [:]
+    private let settingsNavigation = SettingsNavigation()
 
     init(app: AppModel) {
         self.app = app
@@ -32,9 +33,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
         }
     }
 
-    func showSettings() {
+    /// Opens Settings, on `tab` if given, else where it was left.
+    func showSettings(tab: SettingsTab? = nil) {
+        if let tab { settingsNavigation.tab = tab }
         show(id: "settings", title: "Settings", size: CGSize(width: 680, height: 560), minSize: CGSize(width: 620, height: 480)) {
-            SettingsView()
+            SettingsView(navigation: settingsNavigation)
         }
     }
 
