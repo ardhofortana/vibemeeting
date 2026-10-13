@@ -36,6 +36,14 @@ jobs:
           fi
           echo "No personal terms found."
 
+  catalogs:
+    name: String catalogs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Catalogs are valid and the permission prompts match Info.plist
+        run: python3 scripts/check-catalogs.py
+
   core:
     name: VibeCore tests (Linux)
     runs-on: ubuntu-latest

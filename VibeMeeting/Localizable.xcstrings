@@ -1,0 +1,98 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld replies" : {
+      "comment" : "Meeting details: how many replies were drafted in the meeting.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld reply"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld replies"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld saved meetings can't be opened because a newer version of VibeMeeting saved them. Update VibeMeeting to open them. Their files are kept as they are." : {
+      "comment" : "Main window notice: meeting files saved by a newer version of the app.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld saved meeting can't be opened because a newer version of VibeMeeting saved it. Update VibeMeeting to open it. Its file is kept as it is."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld saved meetings can't be opened because a newer version of VibeMeeting saved them. Update VibeMeeting to open them. Their files are kept as they are."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld saved meetings can't be opened. A newer version of VibeMeeting saved them, or their files are damaged. The files are kept as they are." : {
+      "comment" : "Main window notice: meeting files that can't be read (newer version or damaged).",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld saved meeting can't be opened. A newer version of VibeMeeting saved it, or its file is damaged. The file is kept as it is."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld saved meetings can't be opened. A newer version of VibeMeeting saved them, or their files are damaged. The files are kept as they are."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "At least %lld sentences" : {
+      "comment" : "Settings → Reply styles: the shortest reply a style asks for.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "At least %lld sentence"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "At least %lld sentences"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

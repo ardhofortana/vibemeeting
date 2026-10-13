@@ -22,7 +22,7 @@ struct WelcomeView: View {
             }
 
             step(number: 1, title: "Audio") {
-                Text("VibeMeeting needs to hear your calls. Audio stays on this Mac. Only text is sent to Claude to draft replies.")
+                Text("VibeMeeting needs to hear your calls: the other side through your Mac's sound, and you through the microphone.")
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Calls are transcribed in \(callLanguage). You can change the language in Settings → General, or for one meeting when you start it.")
                     .font(.callout)
@@ -72,6 +72,10 @@ struct WelcomeView: View {
                 if let keyError {
                     Text(keyError).font(.caption).foregroundStyle(.red)
                 }
+                Text(PrivacyNote.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             step(number: 3, title: "About me") {
@@ -98,7 +102,8 @@ struct WelcomeView: View {
         MeetingLanguage.displayName(of: app.defaultCallLocale)
     }
 
-    private func step<Content: View>(number: Int, title: String, @ViewBuilder content: () -> Content) -> some View {
+    /// One numbered step; the title is localized.
+    private func step<Content: View>(number: Int, title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text("\(number)")
                 .font(.headline)

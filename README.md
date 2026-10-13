@@ -1,162 +1,126 @@
 # VibeMeeting
 
-Asisten meeting pribadi untuk macOS. VibeMeeting mendengarkan lawan bicara di app call mana pun (Zoom, Meet, Teams, Slack, WhatsApp) tanpa bot, menampilkan subtitle live, dan menyiapkan script jawaban siap baca saat kamu menekan **⌥Space**. Setelah meeting selesai, app membuat rekap berisi ringkasan, poin penting, keputusan, action items, dan pertanyaan terbuka.
+A meeting assistant for your Mac. VibeMeeting listens to your calls in any call app (Zoom, Google Meet, Microsoft Teams, Slack, WhatsApp and others) without adding a bot to the call. It shows live subtitles for both sides and, when you press a hotkey, drafts what you could say next in your own voice. After the call it writes a recap with the key points, decisions, action items and open questions.
 
-Ringkasan produk ada di [`docs/PRD.md`](docs/PRD.md). Spesifikasi v1 yang lama (saat VibeMeeting masih tool pribadi) diarsipkan di [`docs/archive/PRD-v1.md`](docs/archive/PRD-v1.md).
+[Bahasa Indonesia](README.id.md) · [What's new](CHANGELOG.md) · [For developers](DEVELOPMENT.md)
 
-> **Status:** kode v1 lengkap (F1–F8). Paket inti `VibeCore` sudah dites (62 unit test). Lapisan app macOS dikompilasi di CI dan **belum diuji di Mac sungguhan**, jadi jalankan dulu checklist M0 di bawah.
+> **Free beta.** VibeMeeting is published by Djavaweb and is free while it's in beta. Expect rough edges.
 
-## Yang dibutuhkan
+## What it does
 
-- Mac dengan **macOS 26** atau lebih baru. Transkripsi on-device (SpeechAnalyzer) baru ada di macOS 26.
-- **Xcode 26**
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
-- API key Claude dari [platform.claude.com](https://platform.claude.com)
+- **Live subtitles** for the other side (from your Mac's sound) and for you (from the microphone), transcribed on your Mac.
+- **Replies on a hotkey.** Press ⌥Space when the other side stops talking, and VibeMeeting drafts a short reply you can read out or put in your own words. It answers what they just said first, then moves toward your goal for the meeting. You can ask for a specific move (Answer, Clarify, Add, Push back), type a quick direction (Steer), or make the reply shorter.
+- **Ask questions.** Three to five questions to ask the other side, to move the meeting toward its goal.
+- **Context.** Add files (PDF, Word, text, Markdown), notes and screenshots before or during the meeting, and replies can use the facts in them.
+- **Your voice.** Write a few lines about yourself in Settings → About me, and pick a reply style.
+- **Recap** after every meeting, including how far you got toward the goal. Copy it as Markdown or export it.
+- **History** of your meetings, searchable, stored on your Mac.
 
-## Build & jalankan
+## Requirements
 
-```bash
-git clone https://github.com/ardhofortana/vibemeeting.git
-cd vibemeeting
-xcodegen generate          # membuat VibeMeeting.xcodeproj dari project.yml
-open VibeMeeting.xcodeproj
-```
+- A Mac with **macOS 26** or later. Apple silicon is recommended; Intel Macs haven't been tested.
+- Your own **Anthropic API key** (see [Your API key and cost](#your-api-key-and-cost)).
+- An internet connection for replies and recaps. Transcription works offline once the speech model for your language is downloaded.
 
-Di Xcode, buka target **VibeMeeting → Signing & Capabilities** dan pilih Team kamu (Apple ID gratis/Personal Team cukup). Lalu simpan Team itu supaya tidak hilang setiap `xcodegen generate`:
+## Install
 
-```bash
-scripts/save-signing-team.sh                        # membaca Team yang kamu pilih di Xcode
-xcodegen generate
-tccutil reset AudioCapture "$(scripts/bundle-id.sh debug)"   # sekali, supaya macOS minta izin lagi untuk build yang sudah bertanda tangan Team
-```
+Signed and notarized downloads are being set up for the beta. Until the first one is out, beta testers build VibeMeeting themselves: see [DEVELOPMENT.md](DEVELOPMENT.md). With a download:
 
-Lalu Run (⌘R). Ikon gelombang akan muncul di menu bar.
+1. Open the downloaded file and drag **VibeMeeting** into your **Applications** folder.
+2. Open VibeMeeting. It lives in the **menu bar** (the wave icon at the top right of your screen) and has no Dock icon unless one of its windows is open.
 
-Build dari Xcode (konfigurasi Debug) adalah app terpisah, **VibeMeeting Dev** (`com.djavaweb.vibemeeting.debug`), dengan pengaturan, key di Keychain, izin macOS, dan folder meeting sendiri (`~/Library/Application Support/VibeMeeting Dev`). Jadi build pengembangan tidak pernah menyentuh instalasi rilis (`com.djavaweb.vibemeeting`). Meeting lama tetap di `~/Library/Application Support/VibeMeeting`, folder build rilis; salin file dari `VibeMeeting/Sessions` ke `VibeMeeting Dev/Sessions` kalau ingin melihatnya di build Debug. `scripts/bundle-id.sh` mencetak bundle ID rilis, dan `scripts/bundle-id.sh debug` bundle ID build Debug, langsung dari `project.yml`.
+## First launch and permissions
 
-> **Kenapa Team penting:** tanpa Team, Xcode menandatangani build secara ad-hoc ("Sign to Run Locally"). macOS mengikat izin System Audio Recording ke tanda tangan itu, jadi setiap rebuild dianggap app baru. Toggle di Privacy & Security tetap terlihat menyala, tapi audio sistem yang diterima hanya hening.
+The Welcome window walks you through three steps:
 
-### Audio check
+1. **Audio.** Click **Allow audio capture**. macOS asks for two permissions:
+   - **Microphone**, to transcribe what you say.
+   - **System Audio Recording**, to transcribe the other side. If you miss the prompt, turn VibeMeeting on in System Settings → Privacy & Security → Screen & System Audio Recording, under **System Audio Recording Only**.
 
-Menu bar → **Audio check…** menjalankan seluruh jalur audio → transkripsi tanpa meeting. Putar video YouTube dalam bahasa panggilan default (Settings → General → Call language) dan ucapkan beberapa kalimat dalam bahasa itu. Kedua kolom (Them dan You) harus menunjukkan level dan teks dalam satu-dua detik. **Copy report** menyalin diagnostik (format audio, jumlah buffer, error, status izin, tanda tangan build) tanpa isi transkrip. Saat meeting berjalan, diagnostik yang sama ada di tombol stetoskop di overlay.
+   VibeMeeting also downloads the on-device speech model for your call language. This happens once per language.
+2. **API key.** Paste your Anthropic API key. It's stored in the macOS Keychain.
+3. **About me.** Optional, but replies sound much more like you with it. Settings → About me shows an outline: your name, what you do, who you usually meet, how you want to come across, facts replies may use, and things you never say. Write it in any language.
 
-Saat pertama kali dibuka, jendela Welcome memandu tiga hal:
+To check that everything works, choose **Audio check…** from the menu bar icon, play a video with speech and say a few words. Both meters should move and text should appear on both sides within a second or two.
 
-1. **Allow audio capture.** macOS akan meminta izin mikrofon dan izin rekam audio sistem, lalu model speech on-device untuk bahasa panggilan diunduh. Bahasa default-nya adalah bahasa pertama di Mac-mu yang didukung speech recognition (kalau tidak ada, English (United States)); ganti di Settings → General, atau per meeting di New meeting.
-2. **API key Claude.** Key disimpan di Keychain.
-3. **About me.** Kosong di awal. Settings → About me menampilkan outline yang perlu diisi: nama, pekerjaanmu, siapa yang biasa kamu temui, kesan yang ingin kamu berikan, fakta yang boleh dipakai di jawaban, dan hal yang tidak pernah kamu katakan. Boleh ditulis dalam bahasa apa pun.
+## Your API key and cost
 
-## Cara pakai
+VibeMeeting uses Anthropic's Claude models with **your own API key**, so Anthropic bills your account directly for what you use. There's no VibeMeeting account and no server in between.
 
-| Fase | Langkah |
+1. Sign in to Anthropic's developer platform at [platform.claude.com](https://platform.claude.com) and add credit to your account.
+2. Create an API key. A separate workspace for VibeMeeting with a monthly spend limit keeps costs predictable.
+3. Paste the key in the Welcome window or in Settings → General, and click **Test connection**.
+
+What it costs depends on how long your meetings are and how often you ask for replies. Rough guide; your usage page on platform.claude.com shows the real numbers:
+
+- With the default models (Claude Haiku 5.5 for replies, Claude Opus 5.5 for recaps), an hour-long meeting usually costs well under one US dollar, often tens of cents.
+- Drafting replies with Opus costs several times more. Chinese, Japanese and Korean use more tokens than English for the same words.
+- While a meeting runs, VibeMeeting refreshes the prompt cache about every four and a half minutes so replies stay fast, which costs a little even when you don't ask for anything. End the meeting when the call ends.
+
+Each meeting's details show an estimated cost. New Anthropic accounts start with low rate limits, so a very long recap can fail at first; open the meeting and click **Try again** later.
+
+## Privacy
+
+Audio never leaves this Mac and meetings are stored only on it; to write replies and recaps, VibeMeeting sends the transcript text, About me and what you add to the meeting (goal, instructions, Steer and context, including file text and images) to Anthropic with your own API key.
+
+In more detail:
+
+- **Audio** is transcribed on your Mac by macOS's own speech recognition. It's never saved and never sent anywhere.
+- **What's sent** goes straight from your Mac to Anthropic's API under your own Anthropic account and terms. Djavaweb doesn't receive your meetings, your key or anything else; VibeMeeting has no server and no analytics.
+- **Meetings** are saved as files in `~/Library/Application Support/VibeMeeting/Sessions`. Deleting a meeting in the main window deletes its file.
+- **Your API key** is stored in the macOS Keychain.
+- **Diagnostics.** The Audio check report and the app's logs never contain transcript text, context or replies. The report stays on your Mac unless you copy it and share it yourself.
+- **Other people in the call** are transcribed too, and their words are sent to Anthropic when you ask for a reply or a recap. Tell them you use VibeMeeting and get their consent where the law requires it.
+
+## Languages
+
+- **Call language.** Each meeting has one language that both sides speak. You can choose any language that macOS's on-device speech recognition supports; the list is in Settings → General → **Call language** and in the New meeting window. The default (Automatic) is the first of your Mac's preferred languages that speech recognition supports, or English (United States) if none is.
+- **Replies, Ask questions and the recap** are written in the call language unless you pick another one in New meeting. You can choose from 35 languages there.
+- **Your own text** (About me, goal, meeting instructions, Steer, context) can be in any language, or a mix.
+- **Preview languages.** Languages that aren't written in the Latin or Cyrillic alphabet (such as Chinese, Japanese, Korean, Thai, Arabic and Hebrew) work, but are marked "preview": sentence splitting, word counts and the echo filter are tuned for the others.
+- **The app itself** is in English for now. It's ready for translation, and other languages will follow.
+
+## Using VibeMeeting
+
+**Before the call.** Choose **New meeting** from the menu bar icon (or the main window). Give the meeting a name and a **Goal** (both optional), check the **Language**, add **Context** (drop files, paste text or a screenshot, or **Add from clipboard**), and pick a **Reply style**. **Meeting instructions** add rules for this meeting's replies. Then click **Start listening**. In a hurry? In the main window, the arrow next to New meeting has **Start now**.
+
+**During the call.** The overlay floats above your other windows:
+
+- **Transcript** on the left: the other side's words in bubbles, yours as plain text. Click a turn to make it the one the next reply answers; double-click it to fix a word the transcription misheard.
+- **Responses** on the right: every reply and question list in this meeting. The newest has **Regenerate** and **Shorter**; any of them can be copied.
+- The **goal** is under the Responses title. Click it to change it.
+- The bar at the bottom has the moves (Answer, Clarify, Add, Push back), **Ask questions**, the **Steer** field and **Reply**.
+- The green window button switches to a compact one-column overlay; the red one hides the overlay without ending the meeting (⌥H brings it back).
+
+**After the call.** Click **End meeting**. The recap is created automatically. Open the meeting in the main window to read it, **Copy as Markdown**, or **Export .md…**.
+
+### Hotkeys
+
+Hotkeys work only while a meeting is running, so they never get in the way in other apps. Change them in Settings → Hotkeys.
+
+| Action | Default |
 | --- | --- |
-| Sebelum | Menu bar → **New meeting** → isi nama (opsional) dan **Goal** (yang ingin dicapai dari meeting ini), drop file, paste teks, screenshot, atau **Add from clipboard** untuk konteks → pilih **Reply style** (**Manage styles** membuka pengaturannya) → **Start listening**. Mau langsung mulai tanpa setup? Di jendela utama, tombol panah di samping **New meeting** → **Start now**. |
-| Selama | Overlay gelap terbagi dua: transkrip di kiri (ucapan mereka dalam bubble, waveform live di judul kolom), semua respon meeting di kanan (bisa di-scroll). Tombol hijau di pojok kiri atas (atau Settings → Overlay) mengganti ke mode Compact satu kolom; tombol merah menyembunyikan overlay tanpa menghentikan meeting. Subtitle mengalir di kiri. Tekan **⌥Space** setelah lawan bicara selesai bicara; script menjawab dulu, lalu mengarahkan pembicaraan ke goal. **Ask questions (⌥Q)** memberi 3–5 pertanyaan untuk lawan bicara supaya arah meeting makin jelas (bisa sebelum ada yang bicara; teks Steer memfokuskannya, klik satu pertanyaan untuk menyalinnya). Klik goal di bawah judul Responses untuk mengubahnya. Klik satu giliran untuk menjadikannya target, atau klik dua kali untuk memperbaiki salah dengar |
-| Setelah | **End meeting**. Rekap dibuat otomatis (termasuk seberapa jauh goal tercapai), lalu bisa di-**Copy as Markdown** atau di-export ke .md |
-
-Hotkey (bisa diubah di Settings → Hotkeys, dan hanya aktif selama meeting berjalan):
-
-| Aksi | Default |
-| --- | --- |
-| Reply (Auto) | ⌥Space |
-| Answer / Clarify / Add / Push back | ⌥1 / ⌥2 / ⌥3 / ⌥4 |
-| Steer (ketik arahan, Enter untuk generate) | ⌥⇧Space |
+| Reply (VibeMeeting picks the move) | ⌥Space |
+| Answer · Clarify · Add · Push back | ⌥1 · ⌥2 · ⌥3 · ⌥4 |
+| Steer (type a direction, then Enter) | ⌥⇧Space |
 | Ask questions | ⌥Q |
-| Regenerate / Shorter | ⌥R / ⌥S |
-| Show/hide overlay | ⌥H |
+| Regenerate · Shorter | ⌥R · ⌥S |
+| Show or hide the overlay | ⌥H |
 
-## Checklist M0 (jalankan di Mac sebelum dipakai di meeting sungguhan)
+## Use it honestly
 
-PRD v1 menetapkan M0 sebagai spike untuk bagian paling berisiko. Kodenya sudah ada; yang tersisa adalah validasi di hardware sungguhan.
+VibeMeeting is an assistant you use openly. It doesn't support use meant to deceive people, for example getting covert help where that isn't allowed, such as in job interviews or exams. You're responsible for following the law where you and the other people in the call are, including getting their consent to transcription where it's required. Djavaweb isn't responsible for how you use VibeMeeting.
 
-1. **Tes inti:** `swift test --package-path Packages/VibeCore`
-2. **Latensi Reply:** jalankan skenario contoh (termasuk satu percobaan prompt injection) terhadap API sungguhan:
-   ```bash
-   cd Packages/VibeCore
-   ANTHROPIC_API_KEY=sk-ant-... swift run vibe-latency --model claude-haiku-5-5 --model claude-opus-5-5
-   ```
-   Target: kata pertama ≤1,5 detik (median) dan ≤3 detik (p90), script lengkap ≤4 detik. Pakai `--context proposal.txt` dan `--about about.txt` untuk mengetes dengan konteks asli. Biaya satu run kira-kira beberapa sen.
-3. **Audio lawan bicara:** buka **Audio check**, putar video YouTube, lalu pastikan teks **Them** muncul dalam ≤1 detik. Transkripsi memakai bahasa panggilan meeting itu (dipilih di New meeting); script, Ask questions, dan rekap ikut bahasa itu kecuali dipilih lain.
-4. **Echo tanpa headset:** pakai speaker laptop dan pastikan suara lawan tidak muncul sebagai **You**. Bila masih bocor, pakai headset atau cek Settings → Audio.
-5. **Hotkey:** coba setiap hotkey saat Zoom atau Chrome sedang fokus. Bila ⌥R/⌥S/⌥H kadang malah mengetik karakter (macOS 26 bisa menyusun ⌥+huruf menjadi karakter seperti ®), ganti ke ⌃⌥R dan seterusnya.
-6. **Beban sistem:** pantau CPU di Activity Monitor selama call 30 menit.
-7. **Screen share:** cek apakah overlay ikut terlihat di Zoom/Meet (lihat catatan di bawah).
+**Hide from screen sharing** (Settings → Overlay) is off by default. It asks macOS to leave the overlay out of screen sharing, but some screen-sharing apps may still capture it, so hide the overlay with ⌥H before you share your screen. Turning the setting on shows the same disclaimer first.
 
-## Arsitektur
+## Troubleshooting
 
-```
-Audio sistem ──► Core Audio process tap ──► SpeechTranscriber (Them) ──┐
-Mic ───────────► AVAudioEngine + voice processing ──► SpeechTranscriber (You) ──┤
-                                                                          ▼
-                                                   TranscriptStore (giliran Them/You)
-                                                                          │ ⌥Space
-                                                                          ▼
-                     ReplyPromptBuilder ──► Claude Messages API (streaming, prompt cache)
-                                                                          │
-                                                                          ▼
-                                             Overlay (NSPanel non-activating)
-```
+- **Nothing appears under Them.** Open **Audio check…**. If the call's meter stays flat, turn VibeMeeting on in System Settings → Privacy & Security → Screen & System Audio Recording → System Audio Recording Only, then start the meeting again. If you picked one app under Settings → Audio → Listen to, try **All system audio** (needed for calls in Safari).
+- **The other side's words show up under You.** Your mic is picking up your speakers. Use headphones, or keep **Remove the call's voice from my mic** on in Settings → Audio.
+- **A hotkey types a character instead.** Some ⌥ + letter combinations type characters on some keyboard layouts. Change the hotkey to ⌃⌥ + letter in Settings → Hotkeys.
+- **Replies don't come.** In Settings → General, click **Test connection**. Check that your Anthropic account has credit.
+- **"Saved meetings can't be opened."** A newer version of VibeMeeting saved them, or the files are damaged. They're kept as they are; update VibeMeeting to open them.
 
-Audio tidak pernah ditulis ke disk dan tidak pernah keluar dari Mac. Yang dikirim ke Claude hanya teks: transkrip meeting, konteks, dan instruksi.
+---
 
-```
-Packages/VibeCore/        Logika lintas platform, dites di Linux & macOS
-  Transcript/             Pengelompokan giliran, target Reply, filter echo teks
-  Audio/                  EchoGate: meredam suara lawan bicara yang bocor dari speaker ke mic
-  Prompt/                 Aturan output, susunan prompt berlapis dengan cache
-  Claude/                 Klien HTTP + SSE streaming (tidak ada SDK Swift resmi)
-  Recap/                  Rekap terstruktur (JSON schema), dipecah untuk meeting panjang
-  Storage/                Satu file JSON per meeting
-  vibe-latency/           CLI untuk gate latensi M0
-VibeMeeting/              App macOS (SwiftUI + AppKit)
-  Audio/ Speech/          Process tap, mic, SpeechAnalyzer
-  Session/                Orkestrasi satu meeting
-  Overlay/                Panel melayang, subtitle, kartu script, bar Reply
-  Setup/ History/ Settings/ Onboarding/
-project.yml               Spesifikasi XcodeGen
-```
-
-### Prompt & latensi
-
-Setiap Reply adalah satu panggilan streaming. Prompt disusun dari bagian paling statis ke paling dinamis, dengan empat cache breakpoint:
-
-1. Aturan output + About me (`system`) ← cache
-2. Konteks meeting (teks + screenshot) ← cache
-3. Gaya (preset + instruksi meeting + goal) ← cache
-4. Transkrip lama, per potongan 12 giliran yang sudah selesai ← cache di potongan terakhir
-5. Giliran terbaru + target + intent + Steer (tidak di-cache). **Ask questions** memakai prefix 1–4 yang sama persis, hanya bagian ini yang berbeda, jadi sama cepatnya dengan Reply.
-
-Jadi Reply melihat seluruh meeting, bukan cuma beberapa kalimat terakhir. Script menjawab hal terakhir yang mereka katakan dulu, lalu menanggapi pertanyaan atau poin sebelumnya yang belum terjawab. Potongan transkrip yang sudah selesai tidak pernah berubah, jadi Reply berikutnya membaca cache dari Reply sebelumnya dan hanya menulis potongan baru. Meeting yang sangat panjang (lebih dari ±60.000 karakter transkrip lama) membuang potongan paling awal.
-
-Cache dipanaskan dengan request `max_tokens: 0` saat **Start listening** dan dijaga tetap hangat setiap ±4,5 menit selama meeting. Mengganti preset atau menambah konteks hanya menulis ulang bagian setelahnya.
-
-## Keputusan yang berbeda dari PRD atau perlu kamu tahu
-
-- **Model.** Reply memakai **Claude Haiku 5.5** dengan thinking dimatikan, karena PRD meminta model tercepat untuk Reply. Rekap memakai **Claude Opus 5.5** dengan server-side refusal fallback. Keduanya bisa diganti di Settings, dan pilihan finalnya ditentukan dari hasil `vibe-latency`. Dengan Haiku, biayanya jauh di bawah target US$1 per jam.
-- **Penyimpanan memakai file JSON, bukan SwiftData.** Satu file per meeting di `~/Library/Application Support/VibeMeeting/Sessions` (build Debug: `VibeMeeting Dev/Sessions`). Alasannya: bisa dites di luar Mac, mudah dibaca, tidak perlu migrasi skema, dan hapus berarti file benar-benar terhapus.
-- **Hide from screen sharing.** Default mati. Apple sekarang menganggap `NSWindow.sharingType = .none` sebagai legacy, dan beberapa app screen share (yang berbasis ScreenCaptureKit di macOS 15+) bisa tetap menangkap overlay, jadi sembunyikan overlay dengan ⌥H sebelum share screen. Saat dinyalakan, Settings → Overlay menampilkan disclaimer dulu: VibeMeeting tidak mendukung pemakaian untuk menipu orang, pengguna bertanggung jawab mematuhi hukum dan meminta persetujuan peserta call lain, dan Djavaweb tidak bertanggung jawab atas cara fitur itu dipakai.
-- **Suara lawan bicara yang bocor ke mic (pakai speaker).** Dua lapis pertahanan, keduanya aktif secara default:
-  - `EchoGate` membandingkan pola level suara mic dengan audio call. Kalau mic hanya berisi suara mereka yang keluar dari speaker, bagian itu dibisukan untuk transkripsi **You** saja; call-nya tidak terpengaruh. Kalau kamu bicara bersamaan, suaramu lebih keras dari perkiraan bocoran, jadi tetap lolos. Bisa dimatikan di Settings → Audio → **Remove the call's voice from my mic**. Statusnya (lag, level, berapa detik dibisukan) ada di Audio check dan di report.
-  - `EchoFilter` membuang teks **You** yang meniru ucapan **Them**: salinan yang hampir sama, dan juga versi yang salah dengar parah ("women's healthies" untuk "Yemen's Halbies"). Kata-katanya disejajarkan satu per satu (kata yang sama, kata yang bunyinya mirip, dan urutannya), dan hanya bagian yang benar-benar gema yang dibuang, jadi "Yeah okay" di depannya tetap ada. Jawaban yang memakai ulang beberapa kata mereka tidak ikut terbuang. Teks live yang meniru **Them** tidak ditampilkan, dan baris **You** yang selesai lebih dulu dihapus begitu teks **Them** yang sama datang.
-- **Echo cancellation default mati.** Voice processing macOS mengecilkan volume semua app lain (termasuk call-nya) dan bisa membuat mic app call jadi lebih pelan. Kalau dinyalakan di Settings → Audio, app memakainya kecuali output-nya headphone Bluetooth/AirPods atau headset USB. Port headphone 3.5 mm tetap dianggap bisa ke speaker (di Mac mini macOS menyebutnya "External Headphones" walau yang terpasang speaker). Kalau gagal, app otomatis kembali ke mic biasa dan menampilkan alasannya di overlay. Dengan voice processing, macOS memecah audio mic jadi beberapa channel dan suara yang sudah diproses ada di channel 0, jadi app mengambil channel itu saja.
-- **Hotkey hanya aktif selama meeting**, supaya ⌥Space tetap berfungsi normal di app lain.
-- **Pre-draft** (eksperimen opsional M3) belum dibuat.
-- **Distribusi** (Developer ID + notarization) belum di-setup. Untuk pemakaian pribadi, Run dari Xcode sudah cukup, asalkan Team sudah dipilih dan disimpan (lihat Build & jalankan).
-
-## Versi & rollback
-
-Versi yang sedang jalan tampil di menu bar dan di Settings → General. Semua perubahan per versi, cara kembali ke versi sebelumnya (`git checkout vX.Y.Z`), dan cara merilis versi baru (`scripts/release.sh`) ada di [CHANGELOG.md](CHANGELOG.md).
-
-## Pengembangan
-
-```bash
-swift test --package-path Packages/VibeCore      # tes inti (macOS atau Linux)
-
-# Tes transport HTTP nyata terhadap server SSE lokal:
-python3 scripts/sse_test_server.py 18777 &
-VIBE_LOCAL_SSE_URL=http://127.0.0.1:18777 swift test --package-path Packages/VibeCore
-```
-
-CI (`.github/workflows/ci.yml`) menjalankan tes inti di Linux dan build app di runner macOS 26.
-
-Log teknis memakai `os.Logger` dengan bundle ID sebagai subsystem (`com.djavaweb.vibemeeting`, atau `com.djavaweb.vibemeeting.debug` untuk build Debug) dan tidak pernah berisi transkrip, konteks, atau script.
+VibeMeeting is closed-source software. © 2026 Djavaweb. All rights reserved.

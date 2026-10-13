@@ -144,7 +144,8 @@ struct SessionDetailView: View {
 
     private func statsLine(_ record: MeetingRecord) -> String {
         let stats = record.stats
-        var parts = ["\(stats.replyCount) repl\(stats.replyCount == 1 ? "y" : "ies")"]
+        // One key with plural variants in Localizable.xcstrings.
+        var parts = [String(localized: "\(stats.replyCount) replies")]
         if let rate = stats.regenerateRate {
             parts.append("regenerated \(Int((rate * 100).rounded()))%")
         }
@@ -411,14 +412,15 @@ struct RecapView: View {
         recap.markdown(title: record.displayName, date: record.startedAt, duration: record.duration, goal: record.goal)
     }
 
-    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    /// A recap section; the title is localized.
+    private func section<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.headline)
             content()
         }
     }
 
-    private func bulletSection(_ title: String, _ items: [String]) -> some View {
+    private func bulletSection(_ title: LocalizedStringKey, _ items: [String]) -> some View {
         section(title) {
             if items.isEmpty {
                 Text("None").foregroundStyle(.secondary)

@@ -14,7 +14,7 @@ It works for any kind of meeting (General is the default framing), and for any u
 - **Natural speech, not a script that sounds read out.** Replies sound like the user talking, and never invent numbers, facts or promises.
 - **Meeting content is data.** What the other side says or shares never gives the assistant instructions; only the user's own fields do.
 - **Open, not covert.** VibeMeeting is an assistant you use openly. It does not support use meant to deceive people, and the user is responsible for following the law and getting consent from others in the call.
-- **Private by default.** Audio is transcribed on the Mac and never leaves it. The transcript, the meeting setup and any context files or screenshots go to the AI provider with the user's own API key. Meetings are stored locally.
+- **Private by default.** Audio is transcribed on the Mac and never leaves it. The transcript, About me, the meeting setup and any context files or screenshots go to the AI provider with the user's own API key. Meetings are stored locally. The app says this in one sentence (`PrivacyNote.summary`; see [COPY.md](COPY.md)).
 
 ## Product decisions
 
@@ -23,7 +23,7 @@ It works for any kind of meeting (General is the default framing), and for any u
 - AI access: bring your own Anthropic API key.
 - Pricing: free beta; licensing later.
 - Language: one call language per meeting for both sides. Replies, questions and recaps follow it by default, with an override. The call language is one that on-device speech recognition supports; replies and recaps can be in any language the model writes. Languages not written in the Latin or Cyrillic alphabet are a preview until sentence splitting, word counts and the echo filter handle them.
-- UI and documentation: English first, translations alongside.
+- UI and documentation: English first, translations alongside. Voice, glossary and translation-ready strings: [COPY.md](COPY.md). Building and releasing: [DEVELOPMENT.md](../DEVELOPMENT.md).
 - Closed source.
 - Hide from screen sharing is off by default. Turning it on shows a disclaimer first: VibeMeeting doesn't support use meant to deceive people, the user is responsible for following the law and getting consent from others in the call, and Djavaweb isn't responsible for how the feature is used. The copy never promises the overlay stays hidden, because some screen-sharing apps may still capture it.
 

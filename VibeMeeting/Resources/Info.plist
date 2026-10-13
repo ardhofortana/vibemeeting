@@ -27,9 +27,9 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>VibeMeeting needs to hear your calls. Audio stays on this Mac. Only text is sent to Claude to draft replies.</string>
+	<string>VibeMeeting transcribes the other side of your calls on this Mac. Audio never leaves this Mac and is never saved.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VibeMeeting transcribes your side of the call on this Mac so replies fit the conversation. Audio is never saved or sent.</string>
+	<string>VibeMeeting transcribes your side of the call on this Mac so replies fit the conversation. Audio never leaves this Mac and is never saved.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Djavaweb</string>
 	<key>VibeMeetingDataFolder</key>

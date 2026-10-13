@@ -136,14 +136,9 @@ private struct MeetingList: View {
     }
 
     /// Why some saved meetings aren't in the list. Their files are never changed.
-    static func unreadableMessage(_ files: [SessionStore.UnreadableFile]) -> String {
-        let newer = files.allSatisfy(\.isFromNewerVersion)
-        if files.count == 1 {
-            return newer
-                ? "1 saved meeting can't be opened because a newer version of VibeMeeting saved it. Update VibeMeeting to open it. Its file is kept as it is."
-                : "1 saved meeting can't be opened. A newer version of VibeMeeting saved it, or its file is damaged. The file is kept as it is."
-        }
-        return newer
+    /// The one-meeting wording is the plural variant in Localizable.xcstrings.
+    static func unreadableMessage(_ files: [SessionStore.UnreadableFile]) -> LocalizedStringKey {
+        files.allSatisfy(\.isFromNewerVersion)
             ? "\(files.count) saved meetings can't be opened because a newer version of VibeMeeting saved them. Update VibeMeeting to open them. Their files are kept as they are."
             : "\(files.count) saved meetings can't be opened. A newer version of VibeMeeting saved them, or their files are damaged. The files are kept as they are."
     }
@@ -336,7 +331,7 @@ private struct MeetingList: View {
         }
     }
 
-    private static func emptyTitle(_ filter: Filter) -> String {
+    private static func emptyTitle(_ filter: Filter) -> LocalizedStringKey {
         switch filter {
         case .all: return "No meetings"
         case .recent: return "Nothing recent"
@@ -345,20 +340,21 @@ private struct MeetingList: View {
         }
     }
 
-    private static func emptyDetail(_ filter: Filter) -> String {
+    private static func emptyDetail(_ filter: Filter) -> LocalizedStringKey? {
         switch filter {
-        case .all: return ""
+        case .all: return nil
         case .recent: return "No meetings in the last 7 days."
         case .recaps: return "A recap is written when a meeting ends."
         case .starred: return "Star a meeting from its … menu to find it here."
         }
     }
 
+    /// Title, detail and action title are localized.
     private func emptyState(
-        _ title: String,
-        _ detail: String,
+        _ title: LocalizedStringKey,
+        _ detail: LocalizedStringKey?,
         systemImage: String,
-        action: (title: String, run: () -> Void)? = nil
+        action: (title: LocalizedStringKey, run: () -> Void)? = nil
     ) -> some View {
         VStack(spacing: 8) {
             Image(systemName: systemImage)
@@ -367,7 +363,7 @@ private struct MeetingList: View {
                 .padding(.bottom, 4)
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
-            if !detail.isEmpty {
+            if let detail {
                 Text(detail)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)

@@ -97,6 +97,8 @@ struct AudioCheckView: View {
             Text("Audio check")
                 .font(.title2.weight(.semibold))
 
+            #if DEBUG
+            // Developers only: a released build is always signed with a Team.
             if CodeSigning.isAdHoc {
                 Label {
                     Text("This build is signed without a Team (\"Sign to Run Locally\"). macOS resets its System Audio Recording permission on every rebuild, so system audio can arrive as pure silence even though the toggle looks on. Pick your Team under Signing & Capabilities and run `scripts/save-signing-team.sh` so it sticks.")
@@ -106,6 +108,7 @@ struct AudioCheckView: View {
                 }
                 .font(.callout)
             }
+            #endif
             LabeledContent("System audio permission", value: SystemAudioPermission.status.label)
                 .font(.callout)
             if app.activeSession?.isActive != true {
@@ -290,9 +293,9 @@ struct DiagnosticsPanel: View {
     }
 }
 
-/// Copies a report to the clipboard and says so.
+/// Copies a report to the clipboard and says so. The title is localized.
 struct CopyButton: View {
-    let title: String
+    let title: LocalizedStringKey
     let text: String
     @State private var copied = false
 

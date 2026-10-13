@@ -203,9 +203,13 @@ final class MeetingSession: Identifiable {
     static func message(for problem: SystemAudioTap.Problem) -> String {
         switch problem {
         case .silentWhileOthersPlay:
-            return CodeSigning.isAdHoc
-                ? "Can't hear the call: macOS gives this build only silence. It's signed without a Team, so its System Audio Recording permission resets on every rebuild. See Audio check."
-                : "Can't hear the call: macOS gives \(AppIdentity.displayName) only silence. Re-allow it under Privacy & Security → Screen & System Audio Recording → System Audio Recording Only, then restart the meeting."
+            #if DEBUG
+            // Developers only: a released build is always signed with a Team.
+            if CodeSigning.isAdHoc {
+                return "Can't hear the call: macOS gives this build only silence. It's signed without a Team, so its System Audio Recording permission resets on every rebuild. See Audio check."
+            }
+            #endif
+            return "Can't hear the call: macOS gives \(AppIdentity.displayName) only silence. Re-allow it under Privacy & Security → Screen & System Audio Recording → System Audio Recording Only, then restart the meeting."
         case .nothingHeardYet:
             return "No sound from other apps yet, though one is playing. If the other side is talking, open Audio check."
         case .unreadableBuffers, .noAudioIO:

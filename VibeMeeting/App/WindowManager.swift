@@ -48,7 +48,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
 
     func showWelcome() {
-        show(id: "welcome", title: "Welcome to VibeMeeting", size: CGSize(width: 520, height: 600), minSize: CGSize(width: 480, height: 540)) {
+        show(id: "welcome", title: "Welcome to VibeMeeting", size: CGSize(width: 520, height: 660), minSize: CGSize(width: 480, height: 600)) {
             WelcomeView()
         }
     }
@@ -57,9 +57,10 @@ final class WindowManager: NSObject, NSWindowDelegate {
         windows[id]?.close()
     }
 
+    /// `title` is localized; glass windows hide it but Mission Control and the Window menu show it.
     private func show<Content: View>(
         id: String,
-        title: String,
+        title: LocalizedStringResource,
         size: CGSize,
         minSize: CGSize,
         glass: Bool = false,
@@ -74,7 +75,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
         let chrome = WindowChromeModel()
         let controller = NSHostingController(rootView: GlassRoot(chrome: chrome, glass: glass, content: content()).environment(app).tint(Brand.accent))
         let window = NSWindow(contentViewController: controller)
-        window.title = title
+        window.title = String(localized: title)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         if glass {
             // Dark glass: the SwiftUI view draws the whole window, title row included,

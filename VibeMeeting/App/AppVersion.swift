@@ -1,7 +1,7 @@
 import Foundation
 
 /// The app's version, from `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in
-/// project.yml (set by scripts/release.sh; see CHANGELOG.md).
+/// project.yml (set by scripts/release.sh; see DEVELOPMENT.md).
 enum AppVersion {
     static var marketing: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"

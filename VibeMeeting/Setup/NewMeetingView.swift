@@ -27,7 +27,7 @@ struct NewMeetingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            WindowTitleBar(title: "New Meeting")
+            WindowTitleBar(title: "New meeting")
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -44,13 +44,16 @@ struct NewMeetingView: View {
                     contextSection
                     replyStyleSection
 
+                    #if DEBUG
+                    // Developers only: a released build is always signed with a Team.
                     if CodeSigning.isAdHoc {
                         GlassNotice(
-                            text: "This build has no signing Team, so macOS may give it only silence from the call. Pick your Team in Xcode and run scripts/save-signing-team.sh (see the README).",
+                            text: "This build has no signing Team, so macOS may give it only silence from the call. Pick your Team in Xcode and run scripts/save-signing-team.sh (see DEVELOPMENT.md).",
                             systemImage: "exclamationmark.triangle.fill",
                             action: "Open Audio check"
                         ) { app.windows.showAudioCheck() }
                     }
+                    #endif
 
                     if !app.settings.hasAPIKey {
                         GlassNotice(
@@ -157,7 +160,8 @@ struct NewMeetingView: View {
         }
     }
 
-    private func languageRow<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    /// A labelled row in the Language card; the title is localized.
+    private func languageRow<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         HStack(spacing: 12) {
             Text(title)
                 .font(.system(size: 13.5))
@@ -170,7 +174,7 @@ struct NewMeetingView: View {
         .padding(.vertical, 8)
     }
 
-    private func writingLanguagePicker(_ title: String, selection: Binding<String?>) -> some View {
+    private func writingLanguagePicker(_ title: LocalizedStringKey, selection: Binding<String?>) -> some View {
         Picker(title, selection: selection) {
             Text("Same as the call").tag(String?.none)
             Divider()

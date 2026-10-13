@@ -60,9 +60,9 @@ private struct VisualEffectBlur: NSViewRepresentable {
 
 /// The row along the top of a glass window: room for the window buttons, the
 /// app icon and a title, then anything trailing. Its height matches the
-/// system title bar, so the buttons line up with it.
+/// system title bar, so the buttons line up with it. The title is localized.
 struct WindowTitleBar<Trailing: View>: View {
-    let title: String
+    let title: LocalizedStringKey
     @ViewBuilder var trailing: () -> Trailing
     @Environment(\.windowChrome) private var chrome
 
@@ -86,7 +86,7 @@ struct WindowTitleBar<Trailing: View>: View {
 }
 
 extension WindowTitleBar where Trailing == EmptyView {
-    init(title: String) {
+    init(title: LocalizedStringKey) {
         self.init(title: title) { EmptyView() }
     }
 }
@@ -132,9 +132,10 @@ extension View {
     }
 }
 
-/// A section title with an icon, and an optional trailing accessory (a hint or a link).
+/// A section title with an icon, and an optional trailing accessory (a hint or
+/// a link). The title is localized.
 struct GlassSectionHeader<Trailing: View>: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     @ViewBuilder var trailing: () -> Trailing
 
@@ -153,7 +154,7 @@ struct GlassSectionHeader<Trailing: View>: View {
 }
 
 extension GlassSectionHeader where Trailing == EmptyView {
-    init(title: String, systemImage: String) {
+    init(title: LocalizedStringKey, systemImage: String) {
         self.init(title: title, systemImage: systemImage) { EmptyView() }
     }
 }
@@ -290,11 +291,11 @@ struct SoftGradientButtonStyle: ButtonStyle {
     }
 }
 
-/// A warning on glass with a button that fixes it.
+/// A warning on glass with a button that fixes it. Text and button title are localized.
 struct GlassNotice: View {
-    let text: String
+    let text: LocalizedStringKey
     let systemImage: String
-    let action: String
+    let action: LocalizedStringKey
     let perform: () -> Void
 
     var body: some View {

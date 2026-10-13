@@ -75,9 +75,12 @@ private struct GeneralSettings: View {
             } header: {
                 Text("Claude API")
             } footer: {
-                Text("Stored in your Keychain. Only text (recent transcript, context, instructions) is sent to Claude. Audio never leaves this Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Your key is stored in the Keychain on this Mac.")
+                    Text(PrivacyNote.summary)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             CallLanguageSection()
@@ -90,22 +93,33 @@ private struct GeneralSettings: View {
                 ModelPicker(title: "Recap", selection: $settings.recapModelID)
             }
 
+            #if DEBUG
+            // Development builds only: the people running them have the project folder.
             Section {
-                LabeledContent("Version") {
-                    HStack(spacing: 8) {
-                        Text(AppVersion.display)
-                        Image(nsImage: NSApp.applicationIconImage)
-                            .resizable()
-                            .frame(width: 22, height: 22)
-                    }
-                }
+                versionRow
             } footer: {
-                Text("What changed in each version, and how to go back to an earlier one: CHANGELOG.md in the project folder.")
+                Text("Development build. What changed in each version: CHANGELOG.md. How to go back to an earlier one: DEVELOPMENT.md.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            #else
+            Section {
+                versionRow
+            }
+            #endif
         }
         .formStyle(.grouped)
+    }
+
+    private var versionRow: some View {
+        LabeledContent("Version") {
+            HStack(spacing: 8) {
+                Text(AppVersion.display)
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 22, height: 22)
+            }
+        }
     }
 
     private func saveKey() {
@@ -184,7 +198,7 @@ private struct CallLanguageSection: View {
 }
 
 private struct ModelPicker: View {
-    let title: String
+    let title: LocalizedStringKey
     @Binding var selection: String
     @State private var editingCustom = false
 
@@ -358,7 +372,8 @@ private struct CustomPresetEditor: View {
             TextField("Name", text: $preset.name)
                 .textFieldStyle(.roundedBorder)
             HStack {
-                Stepper("At least \(preset.minSentences) sentence\(preset.minSentences == 1 ? "" : "s")", value: Binding(
+                // One key with plural variants in Localizable.xcstrings.
+                Stepper("At least \(preset.minSentences) sentences", value: Binding(
                     get: { preset.minSentences },
                     set: { preset.minSentences = $0; preset.maxSentences = max(preset.maxSentences, $0) }
                 ), in: 1...8)

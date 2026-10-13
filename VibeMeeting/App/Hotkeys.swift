@@ -1,3 +1,4 @@
+import Foundation
 import KeyboardShortcuts
 import VibeCore
 
@@ -19,10 +20,11 @@ extension KeyboardShortcuts.Name {
 /// friends keep working normally in other apps the rest of the time.
 @MainActor
 enum Hotkeys {
+    /// A hotkey as Settings lists it. Title and note are localized.
     struct Entry: Identifiable {
         let name: KeyboardShortcuts.Name
-        let title: String
-        let note: String
+        let title: LocalizedStringResource
+        let note: LocalizedStringResource
         var id: String { name.rawValue }
     }
 

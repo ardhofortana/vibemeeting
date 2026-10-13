@@ -204,14 +204,17 @@ struct ReplyBar: View {
 
 /// Hotkeys along the bottom of the overlay; drops the less used ones when narrow.
 private struct HotkeyHints: View {
+    /// A hotkey and its localized label, kept apart so word order never matters.
+    private typealias Hint = (key: String, label: LocalizedStringResource)
+
     var body: some View {
-        let reply = (key: Hotkeys.label(.reply), label: "Reply")
-        let questions = (key: Hotkeys.label(.askQuestions), label: "Ask questions")
-        let intents = (key: Hotkeys.rangeLabel(.answer, .pushBack), label: "Intents")
-        let steer = (key: Hotkeys.label(.steer), label: "Steer")
-        let regenerate = (key: Hotkeys.label(.regenerate), label: "Regenerate")
-        let shorter = (key: Hotkeys.label(.shorter), label: "Shorter")
-        let hide = (key: Hotkeys.label(.toggleOverlay), label: "Hide")
+        let reply: Hint = (key: Hotkeys.label(.reply), label: "Reply")
+        let questions: Hint = (key: Hotkeys.label(.askQuestions), label: "Ask questions")
+        let intents: Hint = (key: Hotkeys.rangeLabel(.answer, .pushBack), label: "Intents")
+        let steer: Hint = (key: Hotkeys.label(.steer), label: "Steer")
+        let regenerate: Hint = (key: Hotkeys.label(.regenerate), label: "Regenerate")
+        let shorter: Hint = (key: Hotkeys.label(.shorter), label: "Shorter")
+        let hide: Hint = (key: Hotkeys.label(.toggleOverlay), label: "Hide")
         ViewThatFits(in: .horizontal) {
             Self.line([reply, questions, intents, steer, regenerate, shorter, hide])
             Self.line([reply, questions, intents, regenerate, shorter, hide])
@@ -221,7 +224,7 @@ private struct HotkeyHints: View {
         .frame(maxWidth: .infinity)
     }
 
-    private static func line(_ items: [(key: String, label: String)]) -> some View {
+    private static func line(_ items: [Hint]) -> some View {
         var text = AttributedString()
         for (index, item) in items.enumerated() {
             if index > 0 {
@@ -232,7 +235,8 @@ private struct HotkeyHints: View {
             var key = AttributedString(item.key)
             key.foregroundColor = Color.primary.opacity(0.85)
             text += key
-            var label = AttributedString("  " + item.label)
+            text += AttributedString("  ")
+            var label = AttributedString(String(localized: item.label))
             label.foregroundColor = Color.secondary
             text += label
         }

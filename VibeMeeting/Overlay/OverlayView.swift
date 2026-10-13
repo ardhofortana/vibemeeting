@@ -235,10 +235,10 @@ private struct OverlayHeader: View {
 
 // MARK: - Column headers
 
-/// A column's title and subtitle, with a waveform and status on the right.
+/// A column's title and subtitle (both localized), with a waveform and status on the right.
 private struct ColumnHeader<Accessory: View>: View {
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
     @ViewBuilder let accessory: () -> Accessory
 
     var body: some View {
