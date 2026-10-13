@@ -15,13 +15,15 @@ struct OverlayView: View {
     var body: some View {
         let compact = app.settings.compactOverlay
         let shape = RoundedRectangle(cornerRadius: OverlayStyle.windowRadius, style: .continuous)
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             OverlayHeader(controller: controller)
             if compact {
                 GoalLine()
+                    .padding(.horizontal, 10)
             }
             if !session.notices.isEmpty {
                 NoticeList()
+                    .padding(.horizontal, 10)
             }
             Group {
                 if compact {
@@ -30,12 +32,14 @@ struct OverlayView: View {
                     splitContent
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Shrinks before the header or the reply bar would be pushed out.
+            .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: OverlayStyle.cardRadius, style: .continuous))
             .overlayCard()
             ReplyBar(controller: controller)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 4)
+        .padding(.bottom, 4)
         .environment(\.overlayDensity, OverlayDensity(width: width))
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
@@ -67,12 +71,13 @@ struct OverlayView: View {
 
             OverlayStyle.divider
                 .frame(width: 1)
-                .padding(.vertical, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 6)
 
             VStack(spacing: 0) {
                 ResponsesHeader()
                 GoalLine()
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, 22)
                     .padding(.bottom, 8)
                 ResponseListView()
             }
@@ -84,8 +89,11 @@ struct OverlayView: View {
         VStack(spacing: 0) {
             CompactStatusRow()
             SubtitleListView(compact: true)
-                .frame(maxHeight: .infinity)
+                .frame(minHeight: 0, maxHeight: .infinity, alignment: .bottom)
+                // Older lines are cut from the top when the script needs the room.
+                .clipped()
             ScriptCardView()
+                .layoutPriority(1)
         }
     }
 }
@@ -112,7 +120,7 @@ private struct OverlayHeader: View {
                 Image(nsImage: NSApp.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 24, height: 24)
                     .accessibilityHidden(true)
             }
             if density == .regular {
@@ -121,13 +129,14 @@ private struct OverlayHeader: View {
                     .lineLimit(1)
                     .fixedSize()
                 Rectangle()
-                    .fill(Color.primary.opacity(0.18))
+                    .fill(Color.primary.opacity(0.35))
                     .frame(width: 1, height: 16)
-                    .padding(.horizontal, 4)
+                    .padding(.horizontal, 8)
             }
 
+            // Gets its full width first; only the name truncates when the header runs out of room.
             presetMenu
-                .layoutPriority(-1)
+                .layoutPriority(1)
 
             Spacer(minLength: 4)
 
@@ -139,7 +148,7 @@ private struct OverlayHeader: View {
             }
             .padding(.trailing, density == .narrow ? 0 : 4)
 
-            HStack(spacing: density == .narrow ? 0 : 4) {
+            HStack(spacing: density == .regular ? 8 : density == .medium ? 4 : 0) {
                 Button {
                     showingDiagnostics.toggle()
                 } label: {
@@ -176,20 +185,14 @@ private struct OverlayHeader: View {
             Button {
                 Task { await app.endMeeting() }
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "stop")
-                        .font(.system(size: 11, weight: .bold))
-                    if density != .narrow {
-                        Text("End meeting")
-                    }
-                }
+                Text(density == .narrow ? "End" : "End meeting")
             }
             .buttonStyle(EndMeetingButtonStyle())
             .fixedSize()
             .help("End the meeting, save it and write the recap")
             .accessibilityLabel("End meeting")
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, 12)
         .frame(height: 48)
     }
 
@@ -246,15 +249,17 @@ private struct ColumnHeader<Accessory: View>: View {
                     .lineLimit(1)
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.primary.opacity(0.7))
                     .lineLimit(1)
             }
+            // The words get the room before the spacer does.
+            .layoutPriority(1)
             Spacer(minLength: 8)
             accessory()
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 22)
+        .padding(.top, 20)
+        .padding(.bottom, 14)
     }
 }
 
@@ -265,39 +270,31 @@ private struct TranscriptHeader: View {
     var body: some View {
         let status = TranscriptStatus(session.status)
         ColumnHeader(title: "Transcript", subtitle: "Live subtitles from the meeting") {
-            WaveformBadge(caption: status.caption, color: status.color, width: density == .regular ? 104 : 76) {
-                LevelWaveform(read: { [session] in (them: session.themLevel, you: session.youLevel) }, isLive: status.isLive)
+            VStack(spacing: 6) {
+                LevelWaveform(
+                    read: { [session] in (them: session.themLevel, you: session.youLevel) },
+                    isLive: status.isLive,
+                    barCount: density == .regular ? 28 : 20
+                )
+                .frame(width: density == .regular ? 118 : 84, height: 30)
+                // Only a problem gets a word; while listening the waveform says enough.
+                if let caption = status.caption {
+                    Text(caption)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(status.color)
+                        .lineLimit(1)
+                }
             }
+            .fixedSize()
             .help(status.help)
         }
     }
 }
 
 private struct ResponsesHeader: View {
-    @Environment(MeetingSession.self) private var session
-    @Environment(\.overlayDensity) private var density
-
     var body: some View {
-        let state = session.replyState
-        let isWorking = state == .drafting || state == .streaming
-        let isFailed = ResponseListView.isFailure(state)
         ColumnHeader(title: "Responses", subtitle: "AI-generated scripts based on the latest speech") {
-            WaveformBadge(
-                caption: Self.caption(for: state),
-                color: isFailed ? .red : .secondary,
-                width: density == .regular ? 104 : 76
-            ) {
-                ActivityWaveform(isActive: isWorking, isFailed: isFailed)
-            }
-        }
-    }
-
-    static func caption(for state: MeetingSession.ReplyState) -> String {
-        switch state {
-        case .idle, .done: return "Ready"
-        case .drafting: return "Thinking…"
-        case .streaming: return "Writing…"
-        case .failed: return "Failed"
+            EmptyView()
         }
     }
 }
@@ -312,10 +309,12 @@ private struct CompactStatusRow: View {
             Text("Transcript")
                 .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 8)
-            Text(status.caption)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(status.color)
-                .lineLimit(1)
+            if let caption = status.caption {
+                Text(caption)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(status.color)
+                    .lineLimit(1)
+            }
             LevelWaveform(read: { [session] in (them: session.themLevel, you: session.youLevel) }, isLive: status.isLive, barCount: 18)
                 .frame(width: 64, height: 18)
         }
@@ -326,9 +325,9 @@ private struct CompactStatusRow: View {
     }
 }
 
-/// What the transcript column says about listening.
+/// What the transcript column says about listening. No caption while all is well.
 private struct TranscriptStatus {
-    let caption: String
+    let caption: String?
     let color: Color
     let isLive: Bool
     let help: String
@@ -338,7 +337,7 @@ private struct TranscriptStatus {
         case .starting:
             self.init(caption: "Starting…", color: .orange, isLive: false, help: "Starting audio capture")
         case .listening:
-            self.init(caption: "Listening…", color: .secondary, isLive: true, help: "Listening to the call and your mic")
+            self.init(caption: nil, color: .secondary, isLive: true, help: "Live audio. Above the line: the call. Below: your mic.")
         case .reconnecting:
             self.init(caption: "Reconnecting…", color: .orange, isLive: true, help: "The audio device changed; reconnecting")
         case .failed(let message):
@@ -350,7 +349,7 @@ private struct TranscriptStatus {
         }
     }
 
-    private init(caption: String, color: Color, isLive: Bool, help: String) {
+    private init(caption: String?, color: Color, isLive: Bool, help: String) {
         self.caption = caption
         self.color = color
         self.isLive = isLive
@@ -380,16 +379,18 @@ private struct GoalLine: View {
                 if goal.isEmpty {
                     Text("Set a goal for this meeting")
                         .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Text("Goal")
                         .fontWeight(.semibold)
                         .foregroundStyle(Brand.violet)
+                        .fixedSize()
                     Text(goal)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Spacer(minLength: 0)
             }
             .font(.system(size: 12))
             .padding(.horizontal, 10)
@@ -448,7 +449,7 @@ private struct NoticeList: View {
                     Text(notice.message)
                         .font(.system(size: 12))
                         .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     if let url = notice.settingsURL {
                         Button("Open Settings") { NSWorkspace.shared.open(url) }
                             .buttonStyle(PillButtonStyle())

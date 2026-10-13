@@ -8,19 +8,22 @@ import VibeCore
 struct ReplyBar: View {
     let controller: OverlayController
     @Environment(MeetingSession.self) private var session
+    @Environment(\.overlayDensity) private var density
     @FocusState private var steerFocused: Bool
 
     var body: some View {
         VStack(spacing: 10) {
-            // The widest row that fits: icons and labels, then labels only, then icons only.
+            // The widest row that fits: icons and labels, then labels only (tighter
+            // the second time), then icons only.
             ViewThatFits(in: .horizontal) {
                 chips(icons: true, labels: true)
                 chips(icons: false, labels: true)
+                chips(icons: false, labels: true, tight: true)
                 chips(icons: true, labels: false)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 steerField
                 replyButton
             }
@@ -45,8 +48,8 @@ struct ReplyBar: View {
         isWorking && session.currentScript?.intent == intent
     }
 
-    private func chips(icons: Bool, labels: Bool) -> some View {
-        HStack(spacing: 8) {
+    private func chips(icons: Bool, labels: Bool, tight: Bool = false) -> some View {
+        HStack(spacing: tight ? 6 : 10) {
             ForEach(ReplyIntent.explicit) { intent in
                 Button {
                     session.reply(intent: intent)
@@ -60,7 +63,7 @@ struct ReplyBar: View {
                         labels: labels
                     )
                 }
-                .buttonStyle(ChipButtonStyle(active: isActive(intent)))
+                .buttonStyle(ChipButtonStyle(active: isActive(intent), horizontalPadding: tight ? 9 : 15))
                 .help("\(Self.help(for: intent)) (\(Hotkeys.label(Self.hotkey(for: intent))))")
             }
             Button {
@@ -68,14 +71,15 @@ struct ReplyBar: View {
                 controller.releaseFocus()
             } label: {
                 chipLabel(
-                    "Ask questions",
+                    tight ? "Questions" : "Ask questions",
                     systemImage: "questionmark.bubble",
-                    iconStyle: AnyShapeStyle(LinearGradient(colors: [Brand.violet, Brand.magenta], startPoint: .topLeading, endPoint: .bottomTrailing)),
+                    iconStyle: AnyShapeStyle(LinearGradient(colors: [Brand.violet, Brand.blue], startPoint: .topLeading, endPoint: .bottomTrailing)),
                     icons: icons,
                     labels: labels
                 )
+                .accessibilityLabel("Ask questions")
             }
-            .buttonStyle(ChipButtonStyle(active: isActive(.questions)))
+            .buttonStyle(ChipButtonStyle(active: isActive(.questions), horizontalPadding: tight ? 9 : 15))
             .help("Questions to ask them so the meeting gets clearer, toward your goal (\(Hotkeys.label(.askQuestions))). The steer text focuses them.")
             .disabled(session.replyState == .drafting)
         }
@@ -84,10 +88,10 @@ struct ReplyBar: View {
 
     @ViewBuilder
     private func chipLabel(_ title: String, systemImage: String, iconStyle: AnyShapeStyle, icons: Bool, labels: Bool) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 9) {
             if icons {
                 Image(systemName: systemImage)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(iconStyle)
             }
             if labels {
@@ -101,7 +105,7 @@ struct ReplyBar: View {
     private var steerField: some View {
         @Bindable var session = session
         let shape = RoundedRectangle(cornerRadius: OverlayStyle.controlRadius, style: .continuous)
-        return HStack(spacing: 9) {
+        return HStack(spacing: 12) {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Brand.gradient(startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -125,14 +129,20 @@ struct ReplyBar: View {
             .help("Reply with this steer (Return)")
             .disabled(session.replyState == .drafting)
         }
-        .padding(.leading, 12)
+        .padding(.leading, 16)
         .padding(.trailing, 8)
-        .frame(minHeight: 40)
+        .frame(minHeight: 46)
         .background(OverlayStyle.controlFill, in: shape)
         .overlay(shape.strokeBorder(
             steerFocused ? Brand.accent.opacity(0.75) : OverlayStyle.controlStroke,
             lineWidth: steerFocused ? 1.5 : 1
         ))
+        // A click anywhere in the box, not just on the text line, starts typing.
+        .contentShape(shape)
+        .onTapGesture {
+            controller.makeKeyForTyping()
+            steerFocused = true
+        }
         .help("Optional: how the next reply should go. Focus it with \(Hotkeys.label(.steer)).")
     }
 
@@ -141,15 +151,16 @@ struct ReplyBar: View {
             session.reply()
             controller.releaseFocus()
         } label: {
-            HStack(spacing: 8) {
-                Text("Reply \(Hotkeys.label(.reply))")
+            HStack(spacing: 12) {
+                Text(density == .narrow ? "Reply" : "Reply \(Hotkeys.label(.reply))")
                 Image(systemName: "paperplane")
                     .font(.system(size: 13, weight: .semibold))
+                    .rotationEffect(.degrees(45))
             }
         }
         .buttonStyle(ReplyButtonStyle())
         .fixedSize()
-        .help("Reply to what they just said; Claude picks the best move")
+        .help("Reply to what they just said; Claude picks the best move (\(Hotkeys.label(.reply)))")
         .disabled(session.replyState == .drafting)
     }
 
@@ -214,15 +225,15 @@ private struct HotkeyHints: View {
         var text = AttributedString()
         for (index, item) in items.enumerated() {
             if index > 0 {
-                var separator = AttributedString("   |   ")
+                var separator = AttributedString("    |    ")
                 separator.foregroundColor = Color.primary.opacity(0.18)
                 text += separator
             }
             var key = AttributedString(item.key)
-            key.foregroundColor = Color.secondary
+            key.foregroundColor = Color.primary.opacity(0.85)
             text += key
             var label = AttributedString("  " + item.label)
-            label.foregroundColor = OverlayStyle.faintText
+            label.foregroundColor = Color.secondary
             text += label
         }
         return Text(text)

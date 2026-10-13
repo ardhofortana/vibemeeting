@@ -49,14 +49,14 @@ Catatan:
 ## [Unreleased]
 
 ### Diubah
-- **Halaman meeting didesain ulang** mengikuti mockup: kaca gelap dengan dua kartu.
+- **Halaman meeting didesain ulang** mengikuti mockup: kaca gelap dengan dua kartu yang hampir selebar jendela.
   - **Header:** tombol jendela, ikon dan nama app, menu gaya reply, timer `00:00:00`, Audio check, Add context, Settings, dan tombol merah End meeting.
-  - **Kolom Transcript:** judul, subtitle, dan waveform live dengan status ("Listening…", "Reconnecting…", "Paused"). Bar di atas garis adalah audio call, di bawah garis mic-mu. Ucapan mereka tampil dalam bubble dengan titik, nama, dan jam; ucapanmu tampil sebagai teks redup tanpa bubble.
-  - **Kolom Responses:** waveform yang bergerak saat respon ditulis ("Ready", "Thinking…", "Writing…"), goal meeting di bawah judul, dan kartu respon dengan jam serta tombol kecil.
-  - **Bar bawah:** chip Answer, Clarify, Add, Push back, dan Ask questions dengan ikon. Chip menyala selama respon intent itu ditulis. Kolom Steer berikon ✨, tombol Reply bergradien, dan daftar hotkey.
+  - **Kolom Transcript:** waveform live di samping judul. Bar di atas garis adalah audio call, di bawah garis mic-mu. Teks status hanya muncul kalau ada masalah ("Reconnecting…", "Paused"). Ucapan mereka tampil dalam bubble dengan titik, nama, dan jam; ucapanmu tampil sebagai teks redup tanpa bubble.
+  - **Kolom Responses:** goal meeting di bawah judul, dan kartu respon dengan jam serta tombol kecil.
+  - **Bar bawah:** chip Answer, Clarify, Add, Push back, dan Ask questions dengan ikon. Chip menyala selama respon intent itu ditulis. Kolom Steer berikon ✨ (klik di mana saja di kotaknya untuk mengetik), tombol Reply bergradien, dan daftar hotkey.
   - Overlay selalu gelap, apa pun tema macOS-nya.
-  - Ukuran awal 860×680. Kalau sempit, label dan hotkey yang jarang dipakai disembunyikan dulu.
-- Tombol jendela overlay: merah dan kuning menyembunyikan overlay (meeting tetap jalan; tampilkan lagi dengan ⌥H atau menu bar). Hijau, atau klik dua kali di header, mengganti antara mode split dan Compact.
+  - Ukuran awal 860×680 (Compact 420×640). Kalau sempit, label chip dipendekkan dulu dan hotkey yang jarang dipakai disembunyikan. Di mode Compact, script yang panjang bisa di-scroll dan bar Reply tidak pernah terdorong keluar.
+- Tombol jendela overlay: merah dan kuning menyembunyikan overlay (meeting tetap jalan; tampilkan lagi dengan ⌥H atau menu bar). Hijau mengganti antara mode split dan Compact (juga lewat Settings → Overlay).
 
 ## [0.6.0] - 2026-10-12
 

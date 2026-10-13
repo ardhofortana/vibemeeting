@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Floating, always-on-top panel that never steals focus from the meeting app.
 final class OverlayPanel: NSPanel {
-    /// Zoom (double-clicking the header, or the green light) switches the
-    /// layout instead of filling the screen.
+    /// Zoom (e.g. a title bar double-click when macOS is set to Zoom) switches
+    /// the layout instead of filling the screen; the green light toggles it directly.
     var onZoom: (() -> Void)?
 
     // Lets the Steer field and transcript edits take typing without activating the app.
@@ -29,7 +29,7 @@ final class OverlayController {
     static let splitSize = CGSize(width: 860, height: 680)
     static let splitMinSize = CGSize(width: 640, height: 460)
     /// Compact layout: one narrow column.
-    static let compactSize = CGSize(width: 420, height: 600)
+    static let compactSize = CGSize(width: 420, height: 640)
     static let compactMinSize = CGSize(width: 360, height: 400)
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -99,6 +99,11 @@ final class OverlayController {
     /// Makes the panel key so the Steer field can take typing.
     func focusForTyping(session: MeetingSession, app: AppModel) {
         show(session: session, app: app)
+        panel?.makeKey()
+    }
+
+    /// Makes the visible panel key, so a click on the Steer box can take typing.
+    func makeKeyForTyping() {
         panel?.makeKey()
     }
 

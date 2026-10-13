@@ -22,7 +22,7 @@ struct ResponseListView: View {
                     // A new Reply, Ask questions, Regenerate or Shorter: show it.
                     followKey: session.currentScript?.id.uuidString ?? "",
                     spacing: 12,
-                    contentPadding: 18
+                    contentPadding: 22
                 ) {
                     ForEach(responses) { script in
                         ResponseCard(script: script, isLatest: script.id == latestID)
@@ -54,29 +54,39 @@ struct ResponseListView: View {
     }
 }
 
-/// Before the first Reply or Ask questions.
+/// Before the first Reply or Ask questions. Drops the symbol when the column is short.
 private struct ResponsesEmptyState: View {
     var body: some View {
+        ViewThatFits(in: .vertical) {
+            content(withSymbol: true)
+            content(withSymbol: false)
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .clipped()
+    }
+
+    private func content(withSymbol: Bool) -> some View {
         VStack(spacing: 10) {
-            ZStack {
-                Image(systemName: "bubble.left")
-                    .font(.system(size: 46, weight: .ultraLight))
-                Image(systemName: "sparkles")
-                    .font(.system(size: 16, weight: .regular))
-                    .offset(y: -3)
+            if withSymbol {
+                ZStack {
+                    Image(systemName: "bubble.left")
+                        .font(.system(size: 46, weight: .light))
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 16, weight: .regular))
+                        .offset(y: -3)
+                }
+                .foregroundStyle(Color.primary.opacity(0.85))
+                .padding(.bottom, 8)
             }
-            .foregroundStyle(.secondary)
-            .padding(.bottom, 4)
             Text("No responses yet")
                 .font(.system(size: 15, weight: .semibold))
             Text("Press Reply (\(Hotkeys.label(.reply))) or ask questions (\(Hotkeys.label(.askQuestions))).\nEvery response stays here for the whole meeting.")
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.primary.opacity(0.7))
                 .multilineTextAlignment(.center)
-                .lineSpacing(2)
+                .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

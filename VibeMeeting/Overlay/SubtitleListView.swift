@@ -46,7 +46,7 @@ struct SubtitleListView: View {
     }
 
     private func fullList(_ turns: [TranscriptTurn], targetIDs: Set<UUID>) -> some View {
-        LiveScrollView(liveKey: Self.liveKey(turns), spacing: 16, contentPadding: 18) {
+        LiveScrollView(liveKey: Self.liveKey(turns), spacing: 16, contentPadding: 22) {
             ForEach(turns) { turn in
                 row(turn, targetIDs: targetIDs)
             }
@@ -99,7 +99,7 @@ private struct TurnRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
+            HStack(spacing: 9) {
                 Circle()
                     .fill(isThem ? Brand.blue : Color.secondary)
                     .frame(width: 7, height: 7)
@@ -108,7 +108,8 @@ private struct TurnRow: View {
                     .foregroundStyle(isThem ? Brand.sky : Color.secondary)
                 Text(OverlayStyle.time(turn.startedAt))
                     .font(.system(size: 11.5).monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
                 if turn.editedText != nil {
                     Text("edited")
                         .font(.system(size: 11))
@@ -144,7 +145,7 @@ private struct TurnRow: View {
                         .padding(.trailing, 9.5)
                     words
                         .foregroundStyle(.secondary)
-                        .padding(.vertical, isSelected ? 4 : 0)
+                        .padding(.vertical, 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .background(
@@ -162,7 +163,7 @@ private struct TurnRow: View {
     private var words: some View {
         text
             .font(.system(size: 14))
-            .lineSpacing(2)
+            .lineSpacing(4)
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }

@@ -5,17 +5,18 @@ import SwiftUI
 /// translucent fills below are light on dark.
 enum OverlayStyle {
     static let windowRadius: CGFloat = 18
-    static let cardRadius: CGFloat = 14
+    static let cardRadius: CGFloat = 15
     static let controlRadius: CGFloat = 10
 
-    static let cardFill = Color.primary.opacity(0.045)
-    static let cardStroke = Color.primary.opacity(0.09)
+    /// Cards sit a little darker than the glass, as if recessed.
+    static let cardFill = Color.black.opacity(0.15)
+    static let cardStroke = Color.primary.opacity(0.13)
     static let bubbleFill = Color.primary.opacity(0.07)
     static let bubbleStroke = Color.primary.opacity(0.07)
     static let controlFill = Color.primary.opacity(0.06)
     static let controlHoverFill = Color.primary.opacity(0.1)
     static let controlStroke = Color.primary.opacity(0.1)
-    static let divider = Color.primary.opacity(0.08)
+    static let divider = Color.primary.opacity(0.15)
     /// Like `.tertiary`, for text built from attributed runs.
     static let faintText = Color.primary.opacity(0.42)
 
@@ -71,7 +72,7 @@ struct OverlayIconButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(Color.primary.opacity(configuration.isPressed ? 0.16 : hovering ? 0.09 : 0)))
                 .contentShape(Circle())
@@ -85,14 +86,16 @@ struct OverlayIconButtonStyle: ButtonStyle {
 /// while that response is being written.
 struct ChipButtonStyle: ButtonStyle {
     var active = false
+    var horizontalPadding: CGFloat = 15
 
     func makeBody(configuration: Configuration) -> some View {
-        ChipBody(configuration: configuration, active: active)
+        ChipBody(configuration: configuration, active: active, horizontalPadding: horizontalPadding)
     }
 
     private struct ChipBody: View {
         let configuration: ButtonStyleConfiguration
         let active: Bool
+        let horizontalPadding: CGFloat
         @State private var hovering = false
         @Environment(\.isEnabled) private var isEnabled
 
@@ -102,19 +105,20 @@ struct ChipButtonStyle: ButtonStyle {
                 .font(.system(size: 12.5, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .padding(.horizontal, 11)
-                .frame(minWidth: 34, minHeight: 32)
+                .padding(.horizontal, horizontalPadding)
+                .frame(minWidth: 36, minHeight: 36)
                 .background(shape.fill(fill))
                 .overlay(shape.strokeBorder(stroke, lineWidth: active ? 1.3 : 1))
-                .shadow(color: active ? Brand.blue.opacity(0.45) : .clear, radius: 8)
+                .shadow(color: active ? Brand.blue.opacity(0.25) : .clear, radius: 3)
                 .contentShape(shape)
                 .scaleEffect(configuration.isPressed ? 0.97 : 1)
-                .opacity(isEnabled ? 1 : 0.45)
+                // A chip whose response is being written stays lit even while disabled.
+                .opacity(isEnabled || active ? 1 : 0.45)
                 .onHover { hovering = $0 }
         }
 
         private var fill: Color {
-            if active { return Brand.blue.opacity(0.16) }
+            if active { return Brand.blue.opacity(0.08) }
             if configuration.isPressed { return Color.primary.opacity(0.14) }
             return hovering ? OverlayStyle.controlHoverFill : OverlayStyle.controlFill
         }
@@ -130,31 +134,7 @@ struct ChipButtonStyle: ButtonStyle {
 /// The main Reply button: the logo's gradient in pale tints, dark label.
 struct ReplyButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        ReplyButtonBody(configuration: configuration)
-    }
-
-    private struct ReplyButtonBody: View {
-        let configuration: ButtonStyleConfiguration
-        @State private var hovering = false
-        @Environment(\.isEnabled) private var isEnabled
-
-        var body: some View {
-            let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
-            configuration.label
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Brand.ink)
-                .lineLimit(1)
-                .padding(.horizontal, 16)
-                .frame(minHeight: 40)
-                .background(shape.fill(Brand.softGradient()))
-                .overlay(shape.strokeBorder(Color.white.opacity(0.4)))
-                .brightness(hovering && isEnabled ? 0.03 : 0)
-                .shadow(color: Brand.violet.opacity(hovering && isEnabled ? 0.4 : 0.22), radius: 10, y: 2)
-                .contentShape(shape)
-                .scaleEffect(configuration.isPressed ? 0.98 : 1)
-                .opacity(isEnabled ? (configuration.isPressed ? 0.88 : 1) : 0.5)
-                .onHover { hovering = $0 }
-        }
+        SoftGradientButtonStyle(minHeight: 46).makeBody(configuration: configuration)
     }
 }
 
@@ -163,10 +143,10 @@ struct EndMeetingButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
         return configuration.label
-            .font(.system(size: 12.5, weight: .semibold))
+            .font(.system(size: 12.5, weight: .medium))
             .foregroundStyle(.white)
             .lineLimit(1)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .frame(minWidth: 32, minHeight: 30)
             .background(shape.fill(Color(red: 0.87, green: 0.22, blue: 0.25).opacity(configuration.isPressed ? 0.8 : 1)))
             .overlay(shape.strokeBorder(Color.white.opacity(0.14)))
@@ -190,6 +170,7 @@ struct PillButtonStyle: ButtonStyle {
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 10)
                 .frame(minHeight: 24)
                 .background(Capsule().fill(Color.primary.opacity(configuration.isPressed ? 0.16 : hovering ? 0.12 : 0.07)))

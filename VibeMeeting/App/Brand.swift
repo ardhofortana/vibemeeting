@@ -14,7 +14,7 @@ enum Brand {
     /// The main accent: buttons, selection, highlights.
     static let accent = blue
     /// The "Them" speaker name: between the logo's cyan and blue.
-    static let sky = dynamic(light: (0, 113, 227), dark: (110, 176, 255))
+    static let sky = dynamic(light: (0, 113, 227), dark: (140, 206, 250))
     /// The reply style menu in the overlay header.
     static let lavender = dynamic(light: (88, 80, 236), dark: (172, 180, 255))
     /// Text on the soft gradient (the Reply button).
@@ -29,9 +29,9 @@ enum Brand {
     static func softGradient(startPoint: UnitPoint = .leading, endPoint: UnitPoint = .trailing) -> LinearGradient {
         LinearGradient(
             colors: [
-                Color(red: 165 / 255, green: 230 / 255, blue: 255 / 255),
-                Color(red: 192 / 255, green: 200 / 255, blue: 255 / 255),
-                Color(red: 232 / 255, green: 188 / 255, blue: 252 / 255),
+                Color(red: 158 / 255, green: 210 / 255, blue: 254 / 255),
+                Color(red: 187 / 255, green: 188 / 255, blue: 254 / 255),
+                Color(red: 230 / 255, green: 163 / 255, blue: 253 / 255),
             ],
             startPoint: startPoint,
             endPoint: endPoint

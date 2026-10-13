@@ -18,10 +18,15 @@ struct ScriptCardView: View {
                 .padding(.vertical, 10)
         case .drafting, .streaming, .done:
             if let script = session.currentScript {
-                ResponseCard(script: script, isLatest: true, showsHistory: true)
+                let card = ResponseCard(script: script, isLatest: true, showsHistory: true)
                     .responseCard(highlighted: true)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 10)
+                // A long script scrolls rather than pushing the reply bar out.
+                ViewThatFits(in: .vertical) {
+                    card
+                    ScrollView { card }
+                }
             }
         }
     }
@@ -67,11 +72,12 @@ struct ResponseCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .truncationMode(isQuestions ? .tail : .head)
-                Spacer(minLength: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 tags
                 Text(OverlayStyle.time(script.createdAt))
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.tertiary)
+                    .fixedSize()
                 if showsHistory { historyMenu }
             }
 
@@ -117,10 +123,15 @@ struct ResponseCard: View {
                 .disabled(script.text.isEmpty)
                 Spacer()
                 if let latency = script.firstTokenLatency {
-                    Text(String(format: "%.1fs", latency))
-                        .font(.system(size: 10.5).monospacedDigit())
-                        .foregroundStyle(.tertiary)
-                        .help("Time to first word")
+                    // Only when there's room next to the buttons.
+                    ViewThatFits(in: .horizontal) {
+                        Text(String(format: "%.1fs", latency))
+                            .font(.system(size: 10.5).monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                            .fixedSize()
+                            .help("Time to first word")
+                        Color.clear.frame(width: 0, height: 0)
+                    }
                 }
             }
             .buttonStyle(PillButtonStyle())
@@ -134,6 +145,7 @@ struct ResponseCard: View {
             Text(script.intent.label)
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(Brand.sky)
+                .fixedSize()
                 .padding(.horizontal, 6)
                 .padding(.vertical, 1.5)
                 .background(Brand.accent.opacity(0.16), in: Capsule())
@@ -142,6 +154,7 @@ struct ResponseCard: View {
             Text(script.variant == .shorter ? "Shorter" : "Regenerated")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)
+                .fixedSize()
         }
     }
 
@@ -251,7 +264,7 @@ struct QuestionList: View {
                             .font(.system(size: 15, weight: index == 0 ? .semibold : .regular))
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         if copied == question {
                             Image(systemName: "checkmark")
                                 .font(.caption)
