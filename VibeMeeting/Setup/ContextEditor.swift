@@ -75,7 +75,7 @@ struct ContextEditor: View {
     /// with the size estimate and Add notes underneath.
     private var pasteCard: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Button {
                     notesFocused = true
                 } label: {
@@ -284,7 +284,7 @@ private struct ContextTabStyle: ButtonStyle {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(selected || hovering ? Color.primary : Color.secondary)
                 .lineLimit(1)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 10)
                 .frame(minHeight: 30)
                 .background(shape.fill(fill))
                 .overlay(shape.strokeBorder(selected ? Glass.focusStroke : Color.clear, lineWidth: 1.2))

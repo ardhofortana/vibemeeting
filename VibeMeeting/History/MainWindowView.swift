@@ -38,7 +38,6 @@ struct MainWindowView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background { GlassBackground() }
     }
 
     @ViewBuilder

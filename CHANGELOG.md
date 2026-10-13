@@ -57,6 +57,19 @@ Catatan:
   - Overlay selalu gelap, apa pun tema macOS-nya.
   - Ukuran awal 860×680 (Compact 420×640). Kalau sempit, label chip dipendekkan dulu dan hotkey yang jarang dipakai disembunyikan. Di mode Compact, script yang panjang bisa di-scroll dan bar Reply tidak pernah terdorong keluar.
 - Tombol jendela overlay: merah dan kuning menyembunyikan overlay (meeting tetap jalan; tampilkan lagi dengan ⌥H atau menu bar). Hijau mengganti antara mode split dan Compact (juga lewat Settings → Overlay).
+- **Script balasan terdengar seperti orang ngomong beneran.** Ada jeda ("um", "well..."), reaksi spontan, dan koreksi di tengah kalimat, tapi seperlunya dan tidak berpola. Isinya tetap jelas dan konkret, dan angka, harga, tanggal, atau nama selalu diucapkan sekali dengan tepat, tanpa ragu atau dikoreksi. Semua gaya bawaan (Friendly Pro, Consultant, Negotiator, Tech Explainer, Short & Sweet, Diplomatic) kini punya cara bicara masing-masing. Ask questions dan Shorter ikut natural, dan kalimat pertama yang tebal tidak lagi terpotong di "...".
+- **Filter gema lebih pintar.** Suara lawan bicara yang bocor ke mic dan ditranskripsi dengan salah dengar (misalnya "women's healthies" untuk "Yemen's Halbies") tidak lagi muncul sebagai "You", baik di teks live maupun teks final. Hanya bagian yang benar-benar gema yang dibuang: "Yeah okay" di depannya atau kalimatmu setelahnya tetap ada, dan jawaban yang memakai ulang kata-kata mereka ("Yes, I can do it in two weeks, no problem.") tetap utuh.
+- **Jendela New meeting dan Add context** memakai kaca gelap sesuai mockup.
+  - Goal maksimal 500 karakter dan instruksi meeting maksimal 300, masing-masing dengan penghitung.
+  - Konteks: area drop file, lalu tab Paste text, Paste screenshot, dan **Add from clipboard** (baru: langsung menambahkan file, gambar, atau teks dari clipboard). File di atas 50 MB ditolak dengan pesan yang jelas.
+  - Gaya balasan tampil sebagai kartu berisi deskripsi singkatnya, dengan link **Manage styles** yang membuka tab Reply styles di Settings.
+- **Jendela utama** didesain ulang dengan kaca gelap.
+  - Sidebar: pencarian (⌘K), filter All / Recent (7 hari) / Recaps / Starred, dan daftar meeting per hari (Today, Yesterday, lalu tanggal). Tiap meeting punya menu "…" untuk Star, Rename, dan Delete.
+  - Tanpa meeting terpilih: tombol **New meeting**, dan menu panah di sebelahnya untuk **Start now** (langsung mulai tanpa setup, bisa pilih gaya), serta Audio check.
+  - Meeting bisa diberi bintang. Tombol bintang dan hapus ada di bagian atas halaman detail meeting.
+
+### Kompatibilitas
+- Meeting lama tetap terbaca. Rollback ke versi di bawah ini: bintang tidak tampil, dan hilang kalau meeting itu disimpan ulang di versi lama (rename atau buat ulang rekap).
 
 ## [0.6.0] - 2026-10-12
 

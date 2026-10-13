@@ -168,6 +168,8 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertTrue(rules.contains("A few per reply at most, sometimes none."))
         XCTAssertTrue(rules.contains("never on a pattern"))
         XCTAssertTrue(rules.contains("they talk smoothly and with confidence"))
+        XCTAssertTrue(rules.contains("Never put a false start or a correction on a number"))
+        XCTAssertTrue(rules.contains("clear and steady on their own prices and scope"))
         XCTAssertTrue(rules.contains("Natural is not vague."))
         XCTAssertTrue(rules.contains("plain enough for a non-native listener"))
         XCTAssertTrue(rules.contains("Mark pauses, breaks and false starts with \"...\" or a comma"))

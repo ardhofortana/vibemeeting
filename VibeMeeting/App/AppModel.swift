@@ -176,6 +176,10 @@ final class AppModel {
             Log.app.error("Recap failed: \(error.localizedDescription, privacy: .public)")
             record.recapError = "Couldn't create the recap. \(error.localizedDescription)"
         }
+        // Renamed, starred or deleted while the recap was being written.
+        guard let latest = self.record(id: id) else { return }
+        record.name = latest.name
+        record.isStarred = latest.isStarred
         save(record)
     }
 

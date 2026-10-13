@@ -60,10 +60,8 @@ struct NewMeetingView: View {
                 .padding(.bottom, 24)
             }
 
-            Rectangle().fill(Glass.divider).frame(height: 1)
             footer
         }
-        .background(GlassBackground())
         .ignoresSafeArea(.container, edges: .top)
         .defaultFocus($focus, .name)
         .onChange(of: goal) { _, value in
@@ -289,7 +287,7 @@ private struct PresetCard: View {
         let shape = RoundedRectangle(cornerRadius: Glass.fieldRadius, style: .continuous)
         HStack(spacing: 14) {
             LogoMark(height: 26)
-                .frame(width: 30)
+                .frame(width: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(preset.name)
                     .font(.system(size: 14, weight: .semibold))
@@ -389,7 +387,6 @@ struct AddContextView: View {
                     .padding(.bottom, 20)
                 }
 
-                Rectangle().fill(Glass.divider).frame(height: 1)
                 HStack {
                     Spacer()
                     Button("Done") {
@@ -410,7 +407,6 @@ struct AddContextView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(GlassBackground())
         .ignoresSafeArea(.container, edges: .top)
         // The window is reused, so reload whenever the meeting changes.
         .task(id: app.activeSession?.id) {
