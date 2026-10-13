@@ -15,18 +15,24 @@ struct SubtitleListView: View {
 
         Group {
             if turns.isEmpty {
-                Text("Waiting for someone to speak…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 8) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundStyle(.tertiary)
+                    Text("Waiting for someone to speak…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if compact {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 12) {
                     ForEach(turns.suffix(2)) { turn in
                         row(turn, targetIDs: targetIDs)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 4)
             } else {
                 fullList(turns, targetIDs: targetIDs)
             }
@@ -40,7 +46,7 @@ struct SubtitleListView: View {
     }
 
     private func fullList(_ turns: [TranscriptTurn], targetIDs: Set<UUID>) -> some View {
-        LiveScrollView(liveKey: Self.liveKey(turns)) {
+        LiveScrollView(liveKey: Self.liveKey(turns), spacing: 16, contentPadding: 18) {
             ForEach(turns) { turn in
                 row(turn, targetIDs: targetIDs)
             }
@@ -80,42 +86,85 @@ struct SubtitleListView: View {
     }
 }
 
+/// One turn: a dot, the speaker, the time, then the words. What they said sits
+/// in a bubble; what you said is plain, dimmer text.
 private struct TurnRow: View {
     let turn: TranscriptTurn
+    /// The next Reply answers this turn.
     let isTarget: Bool
+    /// The user picked this turn as the reply target.
     let isSelected: Bool
 
+    private var isThem: Bool { turn.speaker == .them }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(isTarget ? Brand.accent : Color.clear)
-                .frame(width: 3)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text(turn.speaker.label)
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(turn.speaker == .them ? Brand.accent : Color.secondary)
-                    if turn.editedText != nil {
-                        Text("edited")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-                    if isSelected {
-                        Text("target")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Brand.accent)
-                    }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(isThem ? Brand.blue : Color.secondary)
+                    .frame(width: 7, height: 7)
+                Text(turn.speaker.label)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(isThem ? Brand.sky : Color.secondary)
+                Text(OverlayStyle.time(turn.startedAt))
+                    .font(.system(size: 11.5).monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                if turn.editedText != nil {
+                    Text("edited")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
                 }
-                text
-                    .font(turn.speaker == .them ? .body : .callout)
-                    .foregroundStyle(turn.speaker == .them ? HierarchicalShapeStyle.primary : HierarchicalShapeStyle.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                if isSelected {
+                    Text("Reply target")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(Brand.sky)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Brand.accent.opacity(0.18), in: Capsule())
+                }
+            }
+            if isThem {
+                words
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(bubbleShape.fill(isSelected ? Brand.accent.opacity(0.16) : OverlayStyle.bubbleFill))
+                    .overlay(bubbleShape.strokeBorder(
+                        isTarget ? Brand.accent.opacity(0.6) : OverlayStyle.bubbleStroke,
+                        lineWidth: isTarget ? 1.2 : 1
+                    ))
+                    .padding(.leading, 12)
+            } else {
+                HStack(alignment: .top, spacing: 0) {
+                    Capsule()
+                        .fill(isTarget ? Brand.accent : Color.clear)
+                        .frame(width: 2.5)
+                        .padding(.leading, 12)
+                        .padding(.trailing, 9.5)
+                    words
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, isSelected ? 4 : 0)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(
+                    isSelected ? Brand.accent.opacity(0.12) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                )
             }
         }
-        .padding(.vertical, 2)
-        .background(isSelected ? Brand.accent.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
-        .opacity(turn.speaker == .you ? 0.75 : 1)
+    }
+
+    private var bubbleShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
+    }
+
+    private var words: some View {
+        text
+            .font(.system(size: 14))
+            .lineSpacing(2)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var text: Text {
@@ -126,7 +175,7 @@ private struct TurnRow: View {
         if !turn.volatileText.isEmpty {
             // Text that may still change is shown dimmer.
             var live = AttributedString((turn.finalText.isEmpty ? "" : " ") + turn.volatileText)
-            live.foregroundColor = Color.secondary
+            live.foregroundColor = isThem ? Color.secondary : OverlayStyle.faintText
             text += live
         }
         return Text(text)

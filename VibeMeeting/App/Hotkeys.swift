@@ -71,4 +71,16 @@ enum Hotkeys {
     static func label(_ name: KeyboardShortcuts.Name) -> String {
         KeyboardShortcuts.getShortcut(for: name).map { "\($0)" } ?? "–"
     }
+
+    /// Two hotkeys as a range, e.g. "⌥1–4" when both use the same modifiers.
+    static func rangeLabel(_ first: KeyboardShortcuts.Name, _ last: KeyboardShortcuts.Name) -> String {
+        let start = label(first)
+        let end = label(last)
+        let modifiers = String(start.prefix { "⌃⌥⇧⌘".contains($0) })
+        if !modifiers.isEmpty, end.hasPrefix(modifiers), end.count > modifiers.count,
+           !"⌃⌥⇧⌘".contains(end[end.index(end.startIndex, offsetBy: modifiers.count)]) {
+            return start + "–" + String(end.dropFirst(modifiers.count))
+        }
+        return start + "–" + end
+    }
 }

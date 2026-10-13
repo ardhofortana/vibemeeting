@@ -10,17 +10,19 @@ struct LiveScrollView<Content: View>: View {
     /// Changes when the user asks for new content (a new response): always
     /// scrolls to it and follows again, even if they had scrolled up.
     var followKey = ""
+    var spacing: CGFloat = 8
+    var contentPadding: CGFloat = 12
     @ViewBuilder let content: () -> Content
     @State private var pinnedToBottom = true
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: spacing) {
                     content()
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, contentPadding)
                 .padding(.vertical, 4)
             }
             // While following, growing text keeps the bottom in view as it lays out.
@@ -59,8 +61,10 @@ struct LiveScrollView<Content: View>: View {
                             .font(.caption.weight(.semibold))
                     }
                     .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
                     .controlSize(.small)
-                    .padding(.bottom, 6)
+                    .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
+                    .padding(.bottom, 8)
                 }
             }
         }

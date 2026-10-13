@@ -48,6 +48,16 @@ Catatan:
 
 ## [Unreleased]
 
+### Diubah
+- **Halaman meeting didesain ulang** mengikuti mockup: kaca gelap dengan dua kartu.
+  - **Header:** tombol jendela, ikon dan nama app, menu gaya reply, timer `00:00:00`, Audio check, Add context, Settings, dan tombol merah End meeting.
+  - **Kolom Transcript:** judul, subtitle, dan waveform live dengan status ("Listening…", "Reconnecting…", "Paused"). Bar di atas garis adalah audio call, di bawah garis mic-mu. Ucapan mereka tampil dalam bubble dengan titik, nama, dan jam; ucapanmu tampil sebagai teks redup tanpa bubble.
+  - **Kolom Responses:** waveform yang bergerak saat respon ditulis ("Ready", "Thinking…", "Writing…"), goal meeting di bawah judul, dan kartu respon dengan jam serta tombol kecil.
+  - **Bar bawah:** chip Answer, Clarify, Add, Push back, dan Ask questions dengan ikon. Chip menyala selama respon intent itu ditulis. Kolom Steer berikon ✨, tombol Reply bergradien, dan daftar hotkey.
+  - Overlay selalu gelap, apa pun tema macOS-nya.
+  - Ukuran awal 860×680. Kalau sempit, label dan hotkey yang jarang dipakai disembunyikan dulu.
+- Tombol jendela overlay: merah dan kuning menyembunyikan overlay (meeting tetap jalan; tampilkan lagi dengan ⌥H atau menu bar). Hijau, atau klik dua kali di header, mengganti antara mode split dan Compact.
+
 ## [0.6.0] - 2026-10-12
 
 ### Ditambahkan

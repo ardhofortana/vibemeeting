@@ -14,24 +14,15 @@ struct ResponseListView: View {
 
         Group {
             if responses.isEmpty && !Self.isFailure(session.replyState) {
-                VStack(spacing: 6) {
-                    Text("No responses yet")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Text("Press Reply (\(Hotkeys.label(.reply))) or Ask questions (\(Hotkeys.label(.askQuestions))). Every response stays here for the whole meeting.")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.horizontal, 16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ResponsesEmptyState()
             } else {
                 LiveScrollView(
                     liveKey: Self.liveKey(responses, state: session.replyState),
                     jumpLabel: "Jump to latest",
                     // A new Reply, Ask questions, Regenerate or Shorter: show it.
-                    followKey: session.currentScript?.id.uuidString ?? ""
+                    followKey: session.currentScript?.id.uuidString ?? "",
+                    spacing: 12,
+                    contentPadding: 18
                 ) {
                     ForEach(responses) { script in
                         ResponseCard(script: script, isLatest: script.id == latestID)
@@ -60,5 +51,32 @@ struct ResponseListView: View {
     static func isFailure(_ state: MeetingSession.ReplyState) -> Bool {
         if case .failed = state { return true }
         return false
+    }
+}
+
+/// Before the first Reply or Ask questions.
+private struct ResponsesEmptyState: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Image(systemName: "bubble.left")
+                    .font(.system(size: 46, weight: .ultraLight))
+                Image(systemName: "sparkles")
+                    .font(.system(size: 16, weight: .regular))
+                    .offset(y: -3)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.bottom, 4)
+            Text("No responses yet")
+                .font(.system(size: 15, weight: .semibold))
+            Text("Press Reply (\(Hotkeys.label(.reply))) or ask questions (\(Hotkeys.label(.askQuestions))).\nEvery response stays here for the whole meeting.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

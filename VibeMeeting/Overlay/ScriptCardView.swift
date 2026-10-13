@@ -15,13 +15,13 @@ struct ScriptCardView: View {
             ResponseFailureRow(message: message)
                 .responseCard(highlighted: true)
                 .padding(.horizontal, 10)
-                .padding(.top, 6)
+                .padding(.vertical, 10)
         case .drafting, .streaming, .done:
             if let script = session.currentScript {
                 ResponseCard(script: script, isLatest: true, showsHistory: true)
                     .responseCard(highlighted: true)
                     .padding(.horizontal, 10)
-                    .padding(.top, 6)
+                    .padding(.vertical, 10)
             }
         }
     }
@@ -35,11 +35,11 @@ struct ResponseFailureRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-            Text(message).font(.callout)
+            Text(message).font(.system(size: 13))
             Spacer()
             if session.currentScript != nil, message != "Nothing to reply to yet." {
                 Button("Try again") { session.retry() }
-                    .controlSize(.small)
+                    .buttonStyle(PillButtonStyle())
             }
         }
     }
@@ -60,25 +60,31 @@ struct ResponseCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: isQuestions ? "questionmark.bubble" : "arrowshape.turn.up.left")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(isQuestions ? AnyShapeStyle(Brand.violet) : AnyShapeStyle(.secondary))
                 Text(Self.header(for: script))
-                    .font(.caption)
+                    .font(.system(size: 11.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .truncationMode(isQuestions ? .tail : .head)
                 Spacer(minLength: 4)
                 tags
+                Text(OverlayStyle.time(script.createdAt))
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(.tertiary)
                 if showsHistory { historyMenu }
             }
 
             if script.text.isEmpty && inFlight {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text(isQuestions ? "Thinking of questions…" : "Drafting…").foregroundStyle(.secondary)
+                    Text(isQuestions ? "Thinking of questions…" : "Drafting…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
                 }
             } else if script.text.isEmpty {
                 Text(isLatest ? "Nothing came back. Try Regenerate." : "Interrupted before any words came back.")
+                    .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             } else if isQuestions {
                 // A different set starts with nothing marked as copied.
@@ -86,7 +92,8 @@ struct ResponseCard: View {
                     .id(script.id)
             } else {
                 Text(Self.styled(ScriptText.sanitize(script.text)))
-                    .font(.title3)
+                    .font(.system(size: 15))
+                    .lineSpacing(2.5)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -111,12 +118,12 @@ struct ResponseCard: View {
                 Spacer()
                 if let latency = script.firstTokenLatency {
                     Text(String(format: "%.1fs", latency))
-                        .font(.caption2.monospacedDigit())
+                        .font(.system(size: 10.5).monospacedDigit())
                         .foregroundStyle(.tertiary)
                         .help("Time to first word")
                 }
             }
-            .controlSize(.small)
+            .buttonStyle(PillButtonStyle())
             .disabled(isLatest && session.replyState == .drafting)
         }
     }
@@ -124,10 +131,17 @@ struct ResponseCard: View {
     @ViewBuilder
     private var tags: some View {
         if script.intent != .auto && script.intent != .questions {
-            Text(script.intent.label).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            Text(script.intent.label)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(Brand.sky)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1.5)
+                .background(Brand.accent.opacity(0.16), in: Capsule())
         }
         if script.variant != .fresh {
-            Text(script.variant == .shorter ? "Shorter" : "Regenerated").font(.caption2).foregroundStyle(.tertiary)
+            Text(script.variant == .shorter ? "Shorter" : "Regenerated")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
         }
     }
 
@@ -200,19 +214,18 @@ struct ResponseCard: View {
 }
 
 extension View {
-    /// The response card look: accent tint for the latest one, quieter for older ones.
+    /// The response card look: the latest one tinted with a gradient edge, older ones quieter.
     func responseCard(highlighted: Bool) -> some View {
-        self
-            .padding(12)
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return self
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                highlighted ? Brand.accent.opacity(0.08) : Color.secondary.opacity(0.06),
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(highlighted ? Brand.accent.opacity(0.25) : Color.secondary.opacity(0.12))
-            )
+            .background(highlighted ? Brand.accent.opacity(0.1) : OverlayStyle.bubbleFill, in: shape)
+            .overlay(shape.strokeBorder(
+                highlighted
+                    ? AnyShapeStyle(LinearGradient(colors: [Brand.cyan.opacity(0.55), Brand.violet.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    : AnyShapeStyle(OverlayStyle.bubbleStroke)
+            ))
     }
 }
 
@@ -232,10 +245,10 @@ struct QuestionList: View {
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("\(index + 1).")
-                            .font(.callout.monospacedDigit())
+                            .font(.system(size: 13).monospacedDigit())
                             .foregroundStyle(.secondary)
                         Text(question)
-                            .font(index == 0 ? .title3.weight(.semibold) : .title3)
+                            .font(.system(size: 15, weight: index == 0 ? .semibold : .regular))
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 4)

@@ -3,9 +3,21 @@ import SwiftUI
 
 /// Floating, always-on-top panel that never steals focus from the meeting app.
 final class OverlayPanel: NSPanel {
+    /// Zoom (double-clicking the header, or the green light) switches the
+    /// layout instead of filling the screen.
+    var onZoom: (() -> Void)?
+
     // Lets the Steer field and transcript edits take typing without activating the app.
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func zoom(_ sender: Any?) {
+        if let onZoom {
+            onZoom()
+        } else {
+            super.zoom(sender)
+        }
+    }
 }
 
 @MainActor
@@ -14,11 +26,11 @@ final class OverlayController {
 
     static let autosaveName = "VibeMeetingOverlay"
     /// Split layout: transcript and responses side by side.
-    static let splitSize = CGSize(width: 780, height: 600)
-    static let splitMinSize = CGSize(width: 620, height: 300)
+    static let splitSize = CGSize(width: 860, height: 680)
+    static let splitMinSize = CGSize(width: 640, height: 460)
     /// Compact layout: one narrow column.
-    static let compactSize = CGSize(width: 420, height: 560)
-    static let compactMinSize = CGSize(width: 340, height: 260)
+    static let compactSize = CGSize(width: 420, height: 600)
+    static let compactMinSize = CGSize(width: 360, height: 400)
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -71,6 +83,11 @@ final class OverlayController {
         } else {
             show(session: session, app: app)
         }
+    }
+
+    /// Hides the overlay; the meeting keeps running. The hotkey or the menu bar brings it back.
+    func hide() {
+        panel?.orderOut(nil)
     }
 
     func close() {
@@ -128,6 +145,11 @@ final class OverlayController {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
+        // Always dark glass, so it reads the same over any meeting app.
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.onZoom = { [weak app] in
+            app?.settings.compactOverlay.toggle()
+        }
         panel.contentMinSize = app.settings.compactOverlay ? Self.compactMinSize : Self.splitMinSize
 
         let root = OverlayView(controller: self)
