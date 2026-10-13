@@ -155,6 +155,9 @@ public final class EchoGate: @unchecked Sendable {
         /// The search with the highest correlation in the last 5 to 10 s of
         /// mic audio, whatever became of it.
         public var bestRecent: Probe?
+        /// The same over the whole session (a mic ahead of the reference
+        /// excluded), for a report taken after a pause.
+        public var bestOverall: Probe?
 
         public init(
             processedSeconds: Double = 0,
@@ -167,7 +170,8 @@ public final class EchoGate: @unchecked Sendable {
             referenceTrailSeconds: Double = 0,
             maxReferenceTrailSeconds: Double = 0,
             searches: Searches = Searches(),
-            bestRecent: Probe? = nil
+            bestRecent: Probe? = nil,
+            bestOverall: Probe? = nil
         ) {
             self.processedSeconds = processedSeconds
             self.gatedSeconds = gatedSeconds
@@ -180,6 +184,7 @@ public final class EchoGate: @unchecked Sendable {
             self.maxReferenceTrailSeconds = maxReferenceTrailSeconds
             self.searches = searches
             self.bestRecent = bestRecent
+            self.bestOverall = bestOverall
         }
     }
 
@@ -502,6 +507,7 @@ public final class EchoGate: @unchecked Sendable {
     /// Best probes of the current and the previous `probeBlock`.
     private var currentBest: ProbeRecord?
     private var previousBest: ProbeRecord?
+    private var bestOverall: ProbeRecord?
     private var probeBlockStart: Int?
     private var referenceTrail = 0.0
     private var maxReferenceTrail = 0.0
@@ -616,6 +622,7 @@ public final class EchoGate: @unchecked Sendable {
             rampGain = 1
             currentBest = nil
             previousBest = nil
+            bestOverall = nil
             probeBlockStart = nil
         }
         micSamplesPerBin = geometry.samplesPerBin
@@ -687,6 +694,10 @@ public final class EchoGate: @unchecked Sendable {
             stats.bestRecent = best.probe
             stats.bestRecent?.age = Double(max(0, newest - best.endBin)) * binDuration
         }
+        if let best = bestOverall, let newest = newestMicBin {
+            stats.bestOverall = best.probe
+            stats.bestOverall?.age = Double(max(0, newest - best.endBin)) * binDuration
+        }
         return stats
     }
 
@@ -707,6 +718,7 @@ public final class EchoGate: @unchecked Sendable {
         searches = Searches()
         currentBest = nil
         previousBest = nil
+        bestOverall = nil
         probeBlockStart = nil
         referenceTrail = 0
         maxReferenceTrail = 0
@@ -1046,7 +1058,7 @@ public final class EchoGate: @unchecked Sendable {
         }
     }
 
-    /// Keeps the best probe of the current and the previous block.
+    /// Keeps the best probe of the current and the previous block, and of the session.
     private func record(_ probe: Probe, end: Int) {
         let block = max(1, Int((Self.probeBlock / binDuration).rounded()))
         if let start = probeBlockStart, end >= start, end - start < block {
@@ -1058,6 +1070,9 @@ public final class EchoGate: @unchecked Sendable {
         }
         if probe.correlation > currentBest?.probe.correlation ?? -.infinity {
             currentBest = ProbeRecord(probe: probe, endBin: end)
+        }
+        if probe.outcome != .micLeads, probe.correlation > bestOverall?.probe.correlation ?? -.infinity {
+            bestOverall = ProbeRecord(probe: probe, endBin: end)
         }
     }
 

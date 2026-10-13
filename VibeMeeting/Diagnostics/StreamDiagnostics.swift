@@ -38,6 +38,9 @@ final class StreamDiagnostics: @unchecked Sendable {
         var rebuilds = 0
         var lastRebuildReason: String?
         var problem: String?
+        /// Capture callbacks without a valid host time; the callback's own time
+        /// stood in, which shifts these buffers' stamps for the bleed gate.
+        var invalidHostTimes = 0
 
         // Speech
         var transcriberState: TranscriberState = .notStarted
@@ -179,7 +182,7 @@ extension StreamDiagnostics.Snapshot {
             "verdict: \(verdict() ?? "ok")",
             "capture: \(captureState.label)",
             "  device \(deviceDetail)",
-            "  buffers \(captureBuffers), frames \(capturedFrames), unreadable \(unreadableBuffers)",
+            "  buffers \(captureBuffers), frames \(capturedFrames), unreadable \(unreadableBuffers), without host time \(invalidHostTimes)",
             "  unreadable layout: \(unreadableLayout ?? "–")",
             "  format \(sourceFormat)",
             String(format: "  peak RMS %.5f, last sound %@", peakRMS, ago(lastSoundAt)),

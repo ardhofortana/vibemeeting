@@ -257,6 +257,7 @@ struct DiagnosticsPanel: View {
                 }
                 if speaker == .you {
                     row("Bleed gate", pipeline.echoGateSummary)
+                    row("Gate timing", pipeline.echoTimingSummary)
                 }
                 if snapshot.tracksNonZero {
                     row("Non-zero", snapshot.secondsSinceNonZero.map { String(format: "last %.1fs ago", $0) } ?? "never: only exact zeros")

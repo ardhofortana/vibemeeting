@@ -40,11 +40,17 @@ final class CapturePipeline {
     let youDiagnostics = StreamDiagnostics(name: "You (microphone)")
     let themMeter = AudioLevelMeter()
     let youMeter = AudioLevelMeter()
-    /// Uses the call's audio as the reference to find it in the mic. The search
-    /// starts 50 ms below zero delay: the tap's and the mic's host times may not
-    /// follow the same convention on every device, and a gate that never arms
-    /// only leaves duplicates the text filter still catches.
-    let echoGate = EchoGate(configuration: .init(minLag: -0.05))
+    /// Uses the call's audio as the reference to find it in the mic. Delays
+    /// start at zero: the acoustic delay (output latency, the air, input
+    /// latency) is roughly +5 to +40 ms on these stamps. Accepting a mic ahead
+    /// of the call audio would let call audio that carries the user's own voice
+    /// (monitoring, a mic test) arm the gate on the user, and with the mic held
+    /// for late call audio that gating would hit most of their words. If a
+    /// device's stamps put the bleed before zero, the report shows it as the
+    /// mic leading (the gate's search counters and best probe).
+    let echoGate = EchoGate(configuration: .init())
+    /// How the call audio and the mic line up at the gate, for the report.
+    let echoTiming = EchoTiming()
     /// The call language both streams are transcribed in.
     let locale: Locale
 
@@ -54,6 +60,20 @@ final class CapturePipeline {
     private let youTranscriber: LiveTranscriber
     /// System audio is metered and converted here, not on the Core Audio IO thread.
     private let systemProcessing = DispatchQueue(label: "VibeMeeting.CapturePipeline.system", qos: .userInitiated)
+    /// Mic audio waits here until the call audio it overlaps has reached the
+    /// gate: not at all while the call audio is on time, at most 0.3 s when
+    /// it's late (a little latency for "You" only), never when it stopped.
+    ///
+    /// Why not feed the gate straight from the tap's IO thread instead: that
+    /// only saves the queue hop (well under a millisecond normally), not the
+    /// tap's own delivery delay or a stamp convention that puts the call audio
+    /// behind the mic, and it would make the real-time thread wait on the
+    /// gate's lock while the mic thread runs a coupling search. Holding the
+    /// mic covers every source of lateness and touches no real-time thread.
+    private let micHold = MicHold<HeldMicBuffer>()
+    /// Gates one mic buffer and hands it on (meter, diagnostics, speech).
+    /// Kept so `stop` can flush the hold through it.
+    private var micRelease: (@Sendable (HeldMicBuffer) -> Void)?
     private(set) var isRunning = false
 
     /// Recognizer output, in order, on the main actor.
@@ -87,6 +107,8 @@ final class CapturePipeline {
         guard isRunning else { return }
 
         echoGate.reset()
+        micHold.reset()
+        echoTiming.reset()
         await startSystemAudio(configuration.source)
         guard isRunning else {
             await systemTap.stop()
@@ -100,12 +122,17 @@ final class CapturePipeline {
         isRunning = false
         await systemTap.stop()
         mic.stop()
-        // Let system audio already queued for processing reach the transcriber, so
-        // the last words of a meeting aren't cut off.
+        // Let system audio already queued for processing reach the transcriber (and
+        // the gate), so the last words of a meeting aren't cut off.
         let processing = systemProcessing
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             processing.async { continuation.resume() }
         }
+        // Then the mic audio that was still waiting for it.
+        if let release = micRelease {
+            micHold.flush(release: release)
+        }
+        micRelease = nil
         await themTranscriber.stop()
         await youTranscriber.stop()
     }
@@ -120,6 +147,7 @@ final class CapturePipeline {
             "voice processing off because: \(mic.voiceProcessingOffReason ?? "–")",
             "speaker bleed gate: \(echoGateSummary)",
         ]
+        lines.append(contentsOf: echoGateReportLines())
         for diagnostics in [themDiagnostics, youDiagnostics] {
             lines.append("")
             lines.append("[\(diagnostics.name)]")
@@ -135,16 +163,61 @@ final class CapturePipeline {
         return (environment + extra + streams).joined(separator: "\n")
     }
 
-    /// "on, coupled: lag 42 ms, -21 dB, r 0.83; muted 12.3 s of 300.0 s".
+    /// "bleed found: lag 42 ms, -21 dB, r 0.83; muted 12.3 s of 300.0 s".
+    /// A coupling found earlier that no longer arms the gate (held too long
+    /// without a new sighting) still shows, so "never found" and "found, but
+    /// not now" read differently; so does mic audio the gate couldn't judge
+    /// because the call audio wasn't in yet.
     var echoGateSummary: String {
         guard echoGateEnabled else { return "off" }
         let stats = echoGate.stats
-        var coupling = "no speaker bleed found"
-        if stats.isCoupled, let lag = stats.lagSeconds, let gain = stats.couplingGainDB {
-            coupling = String(format: "bleed found: lag %.0f ms, %.0f dB", lag * 1000, gain)
+        var text = "no speaker bleed found"
+        if let lag = stats.lagSeconds, let gain = stats.couplingGainDB {
+            var coupling = String(format: "lag %.0f ms, %.0f dB", lag * 1000, gain)
             if let r = stats.correlation { coupling += String(format: ", r %.2f", r) }
+            text = stats.isCoupled ? "bleed found: \(coupling)" : "bleed found earlier, not armed now: \(coupling)"
         }
-        return coupling + String(format: "; muted %.1f s of %.1f s", stats.gatedSeconds, stats.processedSeconds)
+        text += String(format: "; muted %.1f s of %.1f s", stats.gatedSeconds, stats.processedSeconds)
+        let unjudged = echoGate.stats.unknownReferenceSeconds
+        if unjudged >= 0.05 {
+            text += String(format: "; %.1f s unjudged (call audio late)", unjudged)
+        }
+        return text
+    }
+
+    /// One line for the Audio check: how the call audio lines up with the mic
+    /// at the gate, and how long the mic waited for it.
+    var echoTimingSummary: String {
+        var text = echoTiming.summary
+        let hold = micHold.stats
+        if hold.releasedBuffers > 0 {
+            text += String(format: "; mic waited in %d of %d buffers, at most %.0f ms",
+                           hold.heldBuffers, hold.releasedBuffers, hold.maxHeldSeconds * 1000)
+        }
+        return text
+    }
+
+    /// The gate's full state and the timing behind it, for the report.
+    private func echoGateReportLines() -> [String] {
+        var lines: [String] = []
+        if echoGateEnabled {
+            // Every field, including any VibeCore adds later (best candidate,
+            // why windows were rejected), without naming them here.
+            let stats = echoGate.stats
+            lines.append("  gate searches: \(stats.searches.summary)")
+            lines.append("  gate best recent: \(stats.bestRecent?.summary ?? "–")")
+            lines.append("  gate best this meeting: \(stats.bestOverall?.summary ?? "–")")
+            lines.append(String(format: "  call audio behind mic end: %.0f ms avg, %.0f ms max",
+                                stats.referenceTrailSeconds * 1000, stats.maxReferenceTrailSeconds * 1000))
+            lines.append("  gate stats: \(stats)")
+            lines.append(String(format: "  mic audio not judged, call audio not in yet: %.1f s", echoGate.stats.unknownReferenceSeconds))
+            let hold = micHold.stats
+            let mean = hold.heldBuffers > 0 ? hold.heldSeconds / Double(hold.heldBuffers) : 0
+            lines.append(String(format: "  mic held for call audio: %d of %d buffers, mean %.0f ms, max %.0f ms, %d left without it",
+                                hold.heldBuffers, hold.releasedBuffers, mean * 1000, hold.maxHeldSeconds * 1000, hold.timedOutBuffers))
+        }
+        lines.append(contentsOf: echoTiming.reportLines())
+        return lines
     }
 
     private var echoGateEnabled = false
@@ -181,6 +254,8 @@ final class CapturePipeline {
         let processing = systemProcessing
         let tap = systemTap
         let gate = echoGate
+        let hold = micHold
+        let timing = echoTiming
         tap.onReconnect = { [weak self] result, willRetry in
             switch result {
             case .success: self?.onEvent?(.systemAudioReconnected)
@@ -199,10 +274,21 @@ final class CapturePipeline {
         // Runs on the Core Audio IO thread with a buffer the tap already copied:
         // hand it on and return. The serial queue keeps the order.
         let handler: SystemAudioTap.BufferHandler = { buffer, hostTime in
+            // Read here, so the report shows the queue's wait.
+            let delivered = mach_absolute_time()
             let owned = OwnedBuffer(buffer: buffer)
             processing.async {
+                // The gate first: mic audio may be waiting for exactly this.
+                if let span = Self.feedReference(owned.buffer, hostTime: hostTime, to: gate) {
+                    hold.referenceArrived(through: span.end)
+                    timing.recordReference(
+                        start: span.start,
+                        end: span.end,
+                        deliveredAt: AVAudioTime.seconds(forHostTime: delivered),
+                        fedAt: AVAudioTime.seconds(forHostTime: mach_absolute_time())
+                    )
+                }
                 diagnostics.recordCapture(owned.buffer, rms: meter.update(with: owned.buffer))
-                Self.feedReference(owned.buffer, hostTime: hostTime, to: gate)
                 transcriber.append(owned.buffer)
             }
         }
@@ -228,6 +314,8 @@ final class CapturePipeline {
         let diagnostics = youDiagnostics
         let transcriber = youTranscriber
         let gate = useGate ? echoGate : nil
+        let hold = micHold
+        let timing = echoTiming
         echoGateEnabled = useGate
         mic.onReconnect = { [weak self] result in
             switch result {
@@ -242,21 +330,46 @@ final class CapturePipeline {
         mic.onVoiceProcessingSkipped = { [weak self] reason in
             self?.onEvent?(reason.map { .voiceProcessingSkipped($0) } ?? .voiceProcessingResumed)
         }
+        // Buffers arrive mono (channel 0 with echo cancellation, live channels
+        // averaged without) and owned, so the gate can work in place and the
+        // meter shows exactly what speech gets. Runs on the mic's tap thread, or
+        // on the main actor for the final flush; the hold serializes the two.
+        let release: @Sendable (HeldMicBuffer) -> Void = { held in
+            let buffer = held.buffer
+            if let gate, let samples = buffer.floatChannelData?[0] {
+                timing.recordMicJudged(end: held.end, referenceThrough: hold.referenceArrivedThrough)
+                gate.process(
+                    UnsafeMutableBufferPointer(start: samples, count: Int(buffer.frameLength)),
+                    sampleRate: buffer.format.sampleRate,
+                    startTime: held.start
+                )
+            }
+            diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
+            transcriber.append(buffer)
+        }
+        micRelease = release
         do {
             diagnostics.update { $0.captureState = .starting }
-            // Buffers arrive mono (channel 0 with echo cancellation, live channels
-            // averaged without) and owned, so the gate can work in place and the
-            // meter shows exactly what speech gets.
             try mic.start(voiceProcessing: voiceProcessing) { buffer, hostTime in
-                if let gate, let samples = buffer.floatChannelData?[0] {
-                    gate.process(
-                        UnsafeMutableBufferPointer(start: samples, count: Int(buffer.frameLength)),
-                        sampleRate: buffer.format.sampleRate,
-                        startTime: AVAudioTime.seconds(forHostTime: hostTime)
-                    )
+                let delivered = AVAudioTime.seconds(forHostTime: mach_absolute_time())
+                let start = AVAudioTime.seconds(forHostTime: hostTime)
+                let rate = buffer.format.sampleRate
+                let end = rate > 0 ? start + Double(buffer.frameLength) / rate : start
+                let held = HeldMicBuffer(buffer: buffer, start: start, end: end)
+                timing.recordMicDelivered(start: start, end: end, deliveredAt: delivered,
+                                          referenceThrough: hold.referenceArrivedThrough)
+                guard let gate else {
+                    release(held)
+                    return
                 }
-                diagnostics.recordCapture(buffer, rms: meter.update(with: buffer))
-                transcriber.append(buffer)
+                // While armed, the gate needs the call audio at its delay; while
+                // searching, through the buffer's end (see MicHold).
+                let stats = gate.stats
+                let needed = MicHold<HeldMicBuffer>.referenceNeeded(
+                    forMicEndingAt: end,
+                    coupledLag: stats.isCoupled ? stats.lagSeconds : nil
+                )
+                hold.push(held, end: end, referenceNeeded: needed, release: release)
             }
         } catch {
             Log.audio.error("Mic failed: \(String(describing: error), privacy: .public)")
@@ -270,19 +383,34 @@ final class CapturePipeline {
 }
 
 extension CapturePipeline {
-    /// The call's audio, folded to mono, as the gate's reference.
-    nonisolated static func feedReference(_ buffer: AVAudioPCMBuffer, hostTime: UInt64, to gate: EchoGate) {
+    /// The call's audio, folded to mono, as the gate's reference. Returns the
+    /// span it covers on the host clock, in seconds (nil when unusable).
+    @discardableResult
+    nonisolated static func feedReference(_ buffer: AVAudioPCMBuffer, hostTime: UInt64, to gate: EchoGate) -> (start: Double, end: Double)? {
         let start = AVAudioTime.seconds(forHostTime: hostTime)
         let rate = buffer.format.sampleRate
+        let frames = Int(buffer.frameLength)
+        guard frames > 0, rate > 0 else { return nil }
         if buffer.format.channelCount == 1, !buffer.format.isInterleaved, let samples = buffer.floatChannelData?[0] {
-            gate.addReference(UnsafeBufferPointer(start: samples, count: Int(buffer.frameLength)), sampleRate: rate, startTime: start)
+            gate.addReference(UnsafeBufferPointer(start: samples, count: frames), sampleRate: rate, startTime: start)
         } else if let mono = MonoMixer.mix(buffer, fold: .average), let samples = mono.floatChannelData?[0] {
             gate.addReference(UnsafeBufferPointer(start: samples, count: Int(mono.frameLength)), sampleRate: rate, startTime: start)
+        } else {
+            return nil
         }
+        return (start, start + Double(frames) / rate)
     }
 }
 
 /// A buffer the tap copied for us, handed to another queue. Nothing else holds it.
 private struct OwnedBuffer: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
+}
+
+/// A mic buffer (owned, mono) and its span on the host clock, in seconds,
+/// while it waits in the hold. Only the hold's lock holder touches it.
+private struct HeldMicBuffer: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+    let start: Double
+    let end: Double
 }

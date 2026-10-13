@@ -61,6 +61,9 @@ Going back never deletes meeting files. The **Compatibility** notes under each v
 - Rollback: every earlier version reads the new owner values correctly. Version 0.6.0 and earlier ignore the format version: they open these meetings normally, but if they save one again (rename, star, recap), its languages are dropped and it comes back as English (United States); the transcript and recap are kept. A development build from between 0.6.0 and this change (format 2) opens them read-only. The notes for earlier versions below still apply.
 - Going back to 0.6.0 or earlier: stars don't show, and a meeting loses its star if that version saves it again (when you rename it or create its recap again).
 
+### Fixed
+- **"Remove the call's voice from my mic" works on more setups.** It now finds the speakers' sound in the mic with loud speakers, a sensitive USB mic, a lively room and delays up to 0.6 s, and the mic waits briefly (at most 0.3 s, only when needed) for the call audio it's compared with, so the sound is actually muted instead of slipping through unjudged. Audio check and the report now show what the gate found and, if it found nothing, why.
+
 ## [0.6.0] - 2026-10-12
 
 ### Added

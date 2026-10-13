@@ -87,6 +87,27 @@ enum AudioEnvironment {
         return "\(name) [\(uid)]"
     }
 
+    /// "buffer 512, safety offset 32, latency 24 + stream 0 frames at 48000 Hz".
+    /// Host-time stamps mark the IO boundary, not the sound: an output sample
+    /// leaves the jack about latency + stream latency after its stamp, a stamp
+    /// that lies safety offset + buffer ahead of when the audio was written;
+    /// an input stamps a sample about its latency after it was in the room.
+    /// These bound the delay the bleed gate should find.
+    static func ioTiming(of device: AudioObjectID, scope: AudioObjectPropertyScope) -> String {
+        guard device.isValid else { return "–" }
+        func frames(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope) -> String {
+            (try? device.read(selector, scope: scope, initial: UInt32(0))).map { "\($0)" } ?? "?"
+        }
+        let streams = (try? device.readObjects(kAudioDevicePropertyStreams, scope: scope)) ?? []
+        let streamLatency = streams.first.flatMap { try? $0.read(kAudioStreamPropertyLatency, initial: UInt32(0)) }
+        let rate = (try? device.read(kAudioDevicePropertyNominalSampleRate, initial: Float64(0))) ?? 0
+        let hertz = rate.isFinite && abs(rate) < 1e9 ? "\(Int(rate))" : "?"
+        return "buffer \(frames(kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal)), "
+            + "safety offset \(frames(kAudioDevicePropertySafetyOffset, scope)), "
+            + "latency \(frames(kAudioDevicePropertyLatency, scope)) + stream \(streamLatency.map { "\($0)" } ?? "?") "
+            + "frames at \(hertz) Hz"
+    }
+
     /// The report, or a note if the speech service takes too long to answer.
     static func boundedReport() async -> [String] {
         await firstResult(within: 3) { await AudioEnvironment.report() } ?? ["(system details timed out)"]
@@ -112,8 +133,10 @@ enum AudioEnvironment {
         let systemOutput = (try? AudioObjectID.defaultSystemOutputDevice()) ?? .unknown
         let input = (try? AudioObjectID.systemObject.read(kAudioHardwarePropertyDefaultInputDevice, initial: AudioObjectID.unknown)) ?? .unknown
         lines.append("default output: \(deviceName(output))")
+        lines.append("  output timing: \(ioTiming(of: output, scope: kAudioObjectPropertyScopeOutput))")
         lines.append("sound effects output: \(deviceName(systemOutput))")
         lines.append("default input: \(deviceName(input))")
+        lines.append("  input timing: \(ioTiming(of: input, scope: kAudioObjectPropertyScopeInput))")
 
         lines.append("speech transcriber available: \(SpeechTranscriber.isAvailable)")
         let supported = await SpeechTranscriber.supportedLocales

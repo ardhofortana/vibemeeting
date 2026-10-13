@@ -15,7 +15,13 @@ import VibeCore
 /// audio, or its processed channel stays digitally silent. A route that failed
 /// once is not retried during this capture session.
 final class MicrophoneCapture: @unchecked Sendable {
-    /// An owned mono buffer and the host time (mach ticks) of its first sample.
+    /// An owned mono buffer and the host time (mach ticks) of its first sample:
+    /// the input tap's `when`, which stamps the first frame at the input IO
+    /// boundary (the sound was in the room the input's latency earlier; the
+    /// report's "mic stamp age on delivery" checks the convention). Buffers
+    /// are ~100 ms and arrive once complete: on arrival their last frame is a
+    /// few ms old and their first ~100 ms. Without a valid host time, the
+    /// callback's own time stands in (counted in the diagnostics).
     typealias BufferHandler = @Sendable (AVAudioPCMBuffer, _ hostTime: UInt64) -> Void
 
     enum Failure: Error, LocalizedError {
@@ -212,7 +218,9 @@ final class MicrophoneCapture: @unchecked Sendable {
             health.record(frames: Int(buffer.frameLength), extractedPeak: extraction.peak,
                           otherChannelsRMS: extraction.otherChannelsRMS)
             diagnostics?.recordChannels(extraction.channelRMS)
-            handler?(extraction.mono, when.isHostTimeValid ? when.hostTime : mach_absolute_time())
+            let hostTimeValid = when.isHostTimeValid
+            if !hostTimeValid { diagnostics?.update { $0.invalidHostTimes += 1 } }
+            handler?(extraction.mono, hostTimeValid ? when.hostTime : mach_absolute_time())
         }
         tapInstalled = true
 

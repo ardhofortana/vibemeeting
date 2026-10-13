@@ -47,7 +47,14 @@ final class SystemAudioTap: @unchecked Sendable {
         }
     }
 
-    /// The buffer and the host time (mach ticks) of its first sample.
+    /// The buffer and the host time (mach ticks) of its first sample: the IO
+    /// cycle's input time on the tap-only aggregate, i.e. where the tapped
+    /// audio sits on the aggregate's input timeline. That is not when it
+    /// leaves the speakers (the output adds its own buffer, safety offset and
+    /// latency, and the tap its own path), which is why the bleed gate
+    /// searches for the delay rather than assuming one. Called on the IO
+    /// thread; without a valid host time, the callback's own time stands in
+    /// (counted in the diagnostics).
     typealias BufferHandler = @Sendable (AVAudioPCMBuffer, _ hostTime: UInt64) -> Void
 
     /// Creates, destroys and rebuilds the tap; receives property notifications.
@@ -93,6 +100,7 @@ final class SystemAudioTap: @unchecked Sendable {
     /// mic stream in the IO buffer list next to the tap's, in the same shape.
     private var composition: Composition = .tapOnly
     private var publishedUnreadable = 0
+    private var publishedInvalidHostTimes = 0
     /// Start times of recent rebuilds, to stop a flapping device from rebuilding forever.
     private var rebuildTimes: [TimeInterval] = []
 
@@ -233,22 +241,27 @@ final class SystemAudioTap: @unchecked Sendable {
             let stream = try TapStream(tapID: tapID, aggregateID: aggregateID)
             self.stream = stream
             publishedUnreadable = 0
+            publishedInvalidHostTimes = 0
 
             // The IO block only copies and hands on; the handler must not do heavy work
             // here (CapturePipeline moves conversion to its own queue).
             let handler = self.handler
             try check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, ioQueue) { _, inputData, inputTime, _, _ in
-                // Copies the tap's samples out; the IO buffer list dies with this cycle.
-                // Unreadable cycles are counted inside TapStream (no lock traffic here).
-                guard let buffer = stream.read(inputData) else { return }
+                // The input time stamps the first frame of this cycle's tap audio.
                 let time = inputTime.pointee
-                handler?(buffer, time.mFlags.contains(.hostTimeValid) ? time.mHostTime : mach_absolute_time())
+                let hostTimeValid = time.mFlags.contains(.hostTimeValid)
+                // Copies the tap's samples out; the IO buffer list dies with this cycle.
+                // Unreadable cycles and missing host times are counted inside
+                // TapStream (no extra lock traffic here).
+                guard let buffer = stream.read(inputData, hostTimeValid: hostTimeValid) else { return }
+                handler?(buffer, hostTimeValid ? time.mHostTime : mach_absolute_time())
             }, "Creating IO proc")
 
             // Chromium's order: probe after creating the IO proc, before starting.
             tapDenied = probeTapPermissionDenied()
             let probe = tapDenied.map { $0 ? "refused" : "ok" } ?? "unknown"
             let detail = "\(stream.summary); aggregate: \(self.composition.label); "
+                + "aggregate input timing: \(AudioEnvironment.ioTiming(of: aggregateID, scope: kAudioObjectPropertyScopeInput)); "
                 + "source: \(sourceLabel); "
                 + "permission preflight: \(SystemAudioPermission.status.label); tap probe: \(probe)"
             diagnostics?.update {
@@ -624,9 +637,12 @@ final class SystemAudioTap: @unchecked Sendable {
     private func publish(_ health: TapStream.Health, of stream: TapStream) {
         let newUnreadable = health.unreadableTotal - publishedUnreadable
         publishedUnreadable = health.unreadableTotal
+        let newInvalidHostTimes = health.invalidHostTimes - publishedInvalidHostTimes
+        publishedInvalidHostTimes = health.invalidHostTimes
         let layout = health.badLayout.map { stream.describe($0) }
         diagnostics?.update {
             $0.unreadableBuffers += newUnreadable
+            $0.invalidHostTimes += newInvalidHostTimes
             if let layout { $0.unreadableLayout = layout }
             // Across rebuilds; nil = no non-zero sample yet in this capture.
             $0.tracksNonZero = true
@@ -653,6 +669,8 @@ private final class TapStream: @unchecked Sendable {
         /// False until the first non-zero sample of this tap.
         var everSignal: Bool
         var badLayout: BufferLayout?
+        /// Readable cycles whose input time had no valid host time.
+        var invalidHostTimes: Int
     }
 
     /// The shape of one IO buffer list. Plain integers: captured on the IO thread
@@ -682,6 +700,7 @@ private final class TapStream: @unchecked Sendable {
     private var unreadableTotal = 0
     private var consecutiveUnreadable = 0
     private var badLayout: BufferLayout?
+    private var invalidHostTimes = 0
     private var everSignal = false
     private var lastCycleAt: TimeInterval
     private var lastSignalAt: TimeInterval
@@ -737,7 +756,8 @@ private final class TapStream: @unchecked Sendable {
 
     /// Copies this cycle's tap audio into a buffer that owns its samples, or nil
     /// when the buffer list doesn't hold a run of buffers shaped like the tap stream.
-    func read(_ inputData: UnsafePointer<AudioBufferList>) -> AVAudioPCMBuffer? {
+    /// `hostTimeValid` is only counted (for the report).
+    func read(_ inputData: UnsafePointer<AudioBufferList>, hostTimeValid: Bool) -> AVAudioPCMBuffer? {
         let now = ProcessInfo.processInfo.systemUptime
         let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
         var copy: AVAudioPCMBuffer?
@@ -788,6 +808,7 @@ private final class TapStream: @unchecked Sendable {
                 badLayout = layout
             } else {
                 consecutiveUnreadable = 0
+                if !hostTimeValid { invalidHostTimes += 1 }
                 // Non-float formats can't be checked cheaply; treat them as live.
                 if hasSignal || !isFloat32 {
                     lastSignalAt = now
@@ -809,7 +830,8 @@ private final class TapStream: @unchecked Sendable {
                 secondsSinceCycle: now - lastCycleAt,
                 secondsSinceSignal: now - lastSignalAt,
                 everSignal: everSignal,
-                badLayout: badLayout
+                badLayout: badLayout,
+                invalidHostTimes: invalidHostTimes
             )
         }
     }

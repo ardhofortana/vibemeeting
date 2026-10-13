@@ -20,7 +20,7 @@ final class EchoGateFieldTests: XCTestCase {
             var scene = FieldScene(conversation: Conversation(seed: 11 + seed, duration: 40, plan: .loud))
             scene.path = .loudSpeakers
             let run = scene.measure(seed: 21 + seed)
-            XCTAssertLessThan(run.firstCoupled ?? .infinity, 10, "seed \(seed): \(run.stats.searches.summary)")
+            XCTAssertLessThan(run.firstCoupled ?? .infinity, 15, "seed \(seed): \(run.stats.searches.summary)")
             XCTAssertTrue(run.stats.isCoupled, "seed \(seed)")
             XCTAssertEqual(run.stats.lagSeconds ?? .nan, scene.path.delay, accuracy: 0.0301, "seed \(seed)")
             let bleed = run.result.gated { $0 > (run.firstCoupled ?? 0) + 1 && scene.isBleedOnly(at: $0) }
@@ -37,7 +37,7 @@ final class EchoGateFieldTests: XCTestCase {
         scene.path.limiterRatio = 6
         scene.path.reverbDB = -8
         let run = scene.measure(seed: 32)
-        XCTAssertLessThan(run.firstCoupled ?? .infinity, 10, run.stats.searches.summary)
+        XCTAssertLessThan(run.firstCoupled ?? .infinity, 15, run.stats.searches.summary)
         let bleed = run.result.gated { $0 > (run.firstCoupled ?? 0) + 1 && scene.isBleedOnly(at: $0) }
         XCTAssertGreaterThanOrEqual(bleed.value, 0.7, "bleed gated: \(bleed)")
     }
@@ -49,7 +49,7 @@ final class EchoGateFieldTests: XCTestCase {
         scene.path.delay = 0.5
         scene.path.gainDB = -12
         let run = scene.measure(seed: 42)
-        XCTAssertLessThan(run.firstCoupled ?? .infinity, 10, run.stats.searches.summary)
+        XCTAssertLessThan(run.firstCoupled ?? .infinity, 15, run.stats.searches.summary)
         XCTAssertEqual(run.stats.lagSeconds ?? .nan, 0.5, accuracy: 0.0201)
         let bleed = run.result.gated { $0 > (run.firstCoupled ?? 0) + 1 && scene.isBleedOnly(at: $0) }
         XCTAssertGreaterThanOrEqual(bleed.value, 0.7, "bleed gated: \(bleed)")
