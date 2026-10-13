@@ -205,7 +205,7 @@ final class CapturePipeline {
         } catch {
             Log.audio.error("System audio failed: \(String(describing: error), privacy: .public)")
             diagnostics.update {
-                $0.captureState = "Failed to start"
+                $0.captureState = .failedToStart
                 $0.lastError = String(describing: error)
             }
             onEvent?(.systemAudioFailed(error, willRetry: false))
@@ -232,7 +232,7 @@ final class CapturePipeline {
             self?.onEvent?(reason.map { .voiceProcessingSkipped($0) } ?? .voiceProcessingResumed)
         }
         do {
-            diagnostics.update { $0.captureState = "Starting" }
+            diagnostics.update { $0.captureState = .starting }
             // Buffers arrive mono (channel 0 with echo cancellation, live channels
             // averaged without) and owned, so the gate can work in place and the
             // meter shows exactly what speech gets.
@@ -250,7 +250,7 @@ final class CapturePipeline {
         } catch {
             Log.audio.error("Mic failed: \(String(describing: error), privacy: .public)")
             diagnostics.update {
-                $0.captureState = "Failed to start"
+                $0.captureState = .failedToStart
                 $0.lastError = String(describing: error)
             }
             onEvent?(.micFailed(error))

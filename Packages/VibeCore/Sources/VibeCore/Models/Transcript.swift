@@ -2,15 +2,35 @@ import Foundation
 
 /// Who said a line. Separation comes from the audio source, not diarization:
 /// system audio is always `them`, the microphone is always `you`.
+/// The raw value is what's saved, so it never changes.
 public enum Speaker: String, Codable, Sendable, CaseIterable {
     case them
     case you
 
+    /// Fixed name in prompts and the recap schema. Never translated, so prompts
+    /// and the model's answers stay the same whatever the app's language.
+    public var promptToken: String {
+        switch self {
+        case .them: return "Them"
+        case .you: return "You"
+        }
+    }
+
+    /// Name shown in the app. May be translated; never saved or sent to the model.
     public var label: String {
         switch self {
         case .them: return "Them"
         case .you: return "You"
         }
+    }
+
+    /// A saved or model-written name: the raw value or the prompt token, in any case.
+    public init?(token: String) {
+        let token = token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let speaker = Speaker.allCases.first(where: { $0.rawValue == token || $0.promptToken.lowercased() == token }) else {
+            return nil
+        }
+        self = speaker
     }
 }
 

@@ -1,12 +1,13 @@
 import AVFoundation
 import Foundation
+import VibeCore
 
 /// Counters for one audio stream (Them or You), from capture to transcript.
 /// Updated from audio threads, read by the UI. Never holds transcript text.
 final class StreamDiagnostics: @unchecked Sendable {
     struct Snapshot: Equatable {
         // Capture
-        var captureState = "Not started"
+        var captureState: CaptureState = .notStarted
         /// How capture is set up: the tap stream and aggregate input streams for
         /// Them; the device route and voice processing for You. Set by the capture
         /// object; per-buffer updates never overwrite it.
@@ -39,7 +40,7 @@ final class StreamDiagnostics: @unchecked Sendable {
         var problem: String?
 
         // Speech
-        var transcriberState = "Not started"
+        var transcriberState: TranscriberState = .notStarted
         var analyzerFormat = "–"
         var buffersToAnalyzer = 0
         var framesToAnalyzer = 0
@@ -129,7 +130,7 @@ extension StreamDiagnostics.Snapshot {
             return "Capture: every buffer is unreadable (layout mismatch)"
         }
         if captureBuffers == 0 {
-            return captureState.hasPrefix("Failed") ? "Capture failed to start" : "Capture: no buffers yet"
+            return captureState.hasFailed ? "Capture failed to start" : "Capture: no buffers yet"
         }
         if peakRMS <= AudioLevelMeter.silenceRMS {
             if tracksNonZero {
@@ -139,11 +140,13 @@ extension StreamDiagnostics.Snapshot {
             }
             return "Capture: only digital silence (microphone permission, muted input, or wrong mic channel)"
         }
-        if transcriberState == "Stopped with an error" || transcriberState == "Ended unexpectedly" {
-            return "Speech stopped (\(transcriberState.lowercased())); see the error below"
+        switch transcriberState {
+        case .stoppedWithError: return "Speech stopped with an error; see the error below"
+        case .endedUnexpectedly: return "Speech ended unexpectedly; see the error below"
+        default: break
         }
         if buffersToAnalyzer == 0 {
-            return conversionFailures > 0 ? "Conversion fails before speech" : "Nothing reaches speech (\(transcriberState))"
+            return conversionFailures > 0 ? "Conversion fails before speech" : "Nothing reaches speech (\(transcriberState.label))"
         }
         if lostInConversion() {
             return "Speech only receives silence (lost in conversion)"
@@ -174,7 +177,7 @@ extension StreamDiagnostics.Snapshot {
         let nonZero = tracksNonZero ? (secondsSinceNonZero.map { String(format: "%.1fs ago", $0) } ?? "never (only exact zeros)") : "–"
         return [
             "verdict: \(verdict() ?? "ok")",
-            "capture: \(captureState)",
+            "capture: \(captureState.label)",
             "  device \(deviceDetail)",
             "  buffers \(captureBuffers), frames \(capturedFrames), unreadable \(unreadableBuffers)",
             "  unreadable layout: \(unreadableLayout ?? "–")",
@@ -184,7 +187,7 @@ extension StreamDiagnostics.Snapshot {
             "  last non-zero sample: \(nonZero)",
             "  rebuilds \(rebuilds), last reason: \(lastRebuildReason ?? "–"), problem: \(problem ?? "none")",
             "  chosen app idle while another app plays: \(chosenAppIdle)",
-            "transcriber: \(transcriberState)",
+            "transcriber: \(transcriberState.label)",
             "  analyzer format \(analyzerFormat)",
             "  to analyzer: chunks \(buffersToAnalyzer), frames \(framesToAnalyzer), speech-level \(speechLevelChunks), dropped \(droppedChunks), conversion failures \(conversionFailures)",
             String(format: "  analyzer peak RMS %.5f, last audible %@", analyzerPeakRMS, ago(lastAudibleToAnalyzerAt)),

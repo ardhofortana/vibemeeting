@@ -5,12 +5,21 @@ import VibeCore
 
 /// One saved meeting: recap, transcript, scripts, and context.
 struct SessionDetailView: View {
-    enum Tab: String, CaseIterable, Identifiable {
-        case recap = "Recap"
-        case transcript = "Transcript"
-        case scripts = "Scripts"
-        case context = "Context"
-        var id: String { rawValue }
+    enum Tab: CaseIterable, Identifiable {
+        case recap
+        case transcript
+        case scripts
+        case context
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .recap: return "Recap"
+            case .transcript: return "Transcript"
+            case .scripts: return "Scripts"
+            case .context: return "Context"
+            }
+        }
     }
 
     let recordID: UUID
@@ -27,8 +36,15 @@ struct SessionDetailView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
                     .padding(.bottom, 10)
+                if record.isFromNewerVersion {
+                    Label("Saved by a newer version of VibeMeeting, so it's read-only here. Update the app to change it.", systemImage: "lock.fill")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 10)
+                }
                 Picker("Section", selection: $tab) {
-                    ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Tab.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -66,6 +82,7 @@ struct SessionDetailView: View {
                 }
                 .help(record.isStarred ? "Unstar" : "Star, to find it under Starred")
                 .accessibilityLabel(record.isStarred ? "Unstar" : "Star")
+                .disabled(record.isFromNewerVersion)
                 Button(role: .destructive) {
                     confirmingDelete = true
                 } label: {
@@ -95,7 +112,7 @@ struct SessionDetailView: View {
                 Text(record.displayName)
                     .font(.title2.weight(.semibold))
                     .onTapGesture(count: 2) {
-                        guard !isLive else { return }
+                        guard !isLive, !record.isFromNewerVersion else { return }
                         draftName = record.name
                         editingName = true
                     }
@@ -183,6 +200,7 @@ struct SessionDetailView: View {
                     Task { await app.generateRecap(for: record.id) }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(record.isFromNewerVersion)
             }
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -339,7 +357,9 @@ struct RecapView: View {
                     }
                     Button("Export .md…") { export() }
                     Menu {
+                        // Saving a new recap would overwrite a newer file.
                         Button("Create again", action: regenerate)
+                            .disabled(record.isFromNewerVersion)
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }

@@ -19,7 +19,7 @@ public struct RecapPromptBuilder: Sendable {
 
     /// Transcript parts. One part means a single pass is enough.
     public func transcriptParts(for record: MeetingRecord) -> [String] {
-        let transcript = record.transcriptText()
+        let transcript = record.promptTranscriptText()
         guard transcript.count > singlePassCharacterLimit else { return [transcript] }
         return Self.chunk(lines: transcript.components(separatedBy: "\n"), limit: chunkCharacterLimit)
     }
@@ -45,7 +45,7 @@ public struct RecapPromptBuilder: Sendable {
             let notes = partNotes.enumerated().map { "<part number=\"\($0.offset + 1)\">\n\($0.element)\n</part>" }
             text += "The meeting was long, so it was summarized in parts first.\n<meeting_notes>\n\(notes.joined(separator: "\n"))\n</meeting_notes>"
         } else {
-            let transcript = record.transcriptText()
+            let transcript = record.promptTranscriptText()
             text += "<transcript>\n\(transcript.isEmpty ? "(The transcript is empty.)" : transcript)\n</transcript>"
         }
         text += "\n\nWrite the recap of this meeting."

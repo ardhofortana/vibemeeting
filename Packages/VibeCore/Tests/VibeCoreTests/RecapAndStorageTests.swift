@@ -87,7 +87,7 @@ final class RecapTests: XCTestCase {
         let parts = builder.transcriptParts(for: record(turns: turns))
         XCTAssertGreaterThan(parts.count, 1)
         XCTAssertTrue(parts.allSatisfy { $0.count <= 5_000 })
-        XCTAssertEqual(parts.joined(separator: "\n"), record(turns: turns).transcriptText())
+        XCTAssertEqual(parts.joined(separator: "\n"), record(turns: turns).promptTranscriptText())
 
         let final = builder.recapRequest(record: record(turns: turns), aboutMe: "", partNotes: ["notes 1", "notes 2"])
         let text = final.messages[0].content.last?.text ?? ""
@@ -138,7 +138,7 @@ final class SessionStoreTests: XCTestCase {
         try store.save(older)
         try store.save(newer)
 
-        let all = store.loadAll()
+        let all = store.loadAll().records
         XCTAssertEqual(all.map(\.id), [newer.id, older.id])
         XCTAssertEqual(try store.load(id: older.id), older)
         XCTAssertEqual(all[0].stats.regenerateRate, 0.25)
@@ -149,7 +149,7 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(newer.displayName.hasPrefix("Meeting "))
 
         try store.delete(id: older.id)
-        XCTAssertEqual(store.loadAll().map(\.id), [newer.id])
+        XCTAssertEqual(store.loadAll().records.map(\.id), [newer.id])
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.url(for: older.id).path))
     }
 
@@ -175,6 +175,119 @@ final class SessionStoreTests: XCTestCase {
             TranscriptTurn(speaker: .you, finalText: "Hello", startedAt: start.addingTimeInterval(3_725)),
         ], replyModel: "m")
         XCTAssertEqual(record.transcriptText(), "[00:05] Them: Hi\n[1:02:05] You: Hello")
+        XCTAssertEqual(record.promptTranscriptText(), "[00:05] Them: Hi\n[1:02:05] You: Hello")
+    }
+
+    func testSchemaVersionIsWrittenAndOldFilesLoadAsVersionOne() throws {
+        let store = try SessionStore(directory: directory)
+        let record = MeetingRecord(name: "New", presetID: "p", presetName: "P", recap: Recap(summary: "S", actionItems: [.init(task: "Send it", owner: .you)]), replyModel: "m")
+        XCTAssertEqual(record.schemaVersion, MeetingRecord.currentSchemaVersion)
+        XCTAssertEqual(MeetingRecord.currentSchemaVersion, 2)
+        XCTAssertFalse(record.isFromNewerVersion)
+
+        // A file from before versioning: no schemaVersion, owners saved as labels.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        XCTAssertEqual(json["schemaVersion"] as? Int, 2)
+        json.removeValue(forKey: "schemaVersion")
+        var recap = try XCTUnwrap(json["recap"] as? [String: Any])
+        recap["action_items"] = [["task": "Send it", "owner": "You", "due": ""], ["task": "Reply", "owner": "Them", "due": "Monday"]]
+        json["recap"] = recap
+        try JSONSerialization.data(withJSONObject: json).write(to: store.url(for: record.id))
+
+        let old = try store.load(id: record.id)
+        XCTAssertEqual(old.schemaVersion, 1)
+        XCTAssertFalse(old.isFromNewerVersion)
+        XCTAssertEqual(old.recap?.actionItems.map(\.owner), [.you, .them])
+
+        // Saving it again writes the current format.
+        try store.save(old)
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.url(for: record.id))) as? [String: Any])
+        XCTAssertEqual(saved["schemaVersion"] as? Int, MeetingRecord.currentSchemaVersion)
+        let owners = ((saved["recap"] as? [String: Any])?["action_items"] as? [[String: Any]])?.compactMap { $0["owner"] as? String }
+        XCTAssertEqual(owners, ["you", "them"])
+        XCTAssertEqual(try store.load(id: record.id).recap?.actionItems.map(\.owner), [.you, .them])
+    }
+
+    func testMeetingFromNewerVersionOpensReadOnlyAndIsNeverOverwritten() throws {
+        let store = try SessionStore(directory: directory)
+        let record = MeetingRecord(name: "From the future", presetID: "p", presetName: "P", replyModel: "m")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(record)) as? [String: Any])
+        json["schemaVersion"] = 3
+        json["participants"] = ["Alex", "Kim"]
+        let original = try JSONSerialization.data(withJSONObject: json)
+        try original.write(to: store.url(for: record.id))
+
+        let loaded = store.loadAll()
+        XCTAssertEqual(loaded.records.map(\.id), [record.id])
+        XCTAssertTrue(loaded.unreadable.isEmpty)
+        let newer = try XCTUnwrap(loaded.records.first)
+        XCTAssertEqual(newer.schemaVersion, 3)
+        XCTAssertTrue(newer.isFromNewerVersion)
+
+        var renamed = newer
+        renamed.name = "Renamed"
+        XCTAssertThrowsError(try store.save(renamed)) { error in
+            XCTAssertEqual(error as? SessionStore.Failure, .savedByNewerVersion(schemaVersion: 3))
+        }
+        // The file keeps what this version doesn't know about.
+        XCTAssertEqual(try Data(contentsOf: store.url(for: record.id)), original)
+
+        // Deleting is still the user's choice.
+        try store.delete(id: record.id)
+        XCTAssertTrue(store.loadAll().records.isEmpty)
+    }
+
+    func testUnreadableFilesAreReportedNotHidden() throws {
+        let store = try SessionStore(directory: directory)
+        let good = MeetingRecord(name: "Good", presetID: "p", presetName: "P", replyModel: "m")
+        try store.save(good)
+
+        // Damaged: not JSON at all.
+        let damaged = directory.appendingPathComponent("\(UUID().uuidString).json")
+        try Data("secret pricing notes {".utf8).write(to: damaged)
+        // From a newer version that changed a field's type.
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(MeetingRecord(name: "Future", presetID: "p", presetName: "P", replyModel: "m"))) as? [String: Any])
+        json["schemaVersion"] = 5
+        json["turns"] = "secret transcript"
+        let future = directory.appendingPathComponent("\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: json).write(to: future)
+        // A speaker this version doesn't know, without a format version.
+        var speakerJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(MeetingRecord(
+            name: "Panel", presetID: "p", presetName: "P",
+            turns: [TranscriptTurn(speaker: .them, finalText: "secret line", startedAt: Date())], replyModel: "m"
+        ))) as? [String: Any])
+        speakerJSON.removeValue(forKey: "schemaVersion")
+        var turns = try XCTUnwrap(speakerJSON["turns"] as? [[String: Any]])
+        turns[0]["speaker"] = "guest"
+        speakerJSON["turns"] = turns
+        let unknownSpeaker = directory.appendingPathComponent("\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: speakerJSON).write(to: unknownSpeaker)
+        // Other files in the folder are not meetings.
+        try Data("x".utf8).write(to: directory.appendingPathComponent(".DS_Store"))
+
+        let loaded = store.loadAll()
+        XCTAssertEqual(loaded.records.map(\.id), [good.id])
+        XCTAssertEqual(Set(loaded.unreadable.map(\.url.lastPathComponent)), [damaged.lastPathComponent, future.lastPathComponent, unknownSpeaker.lastPathComponent])
+
+        let futureFile = try XCTUnwrap(loaded.unreadable.first { $0.url.lastPathComponent == future.lastPathComponent })
+        XCTAssertEqual(futureFile.schemaVersion, 5)
+        XCTAssertTrue(futureFile.isFromNewerVersion)
+        XCTAssertTrue(futureFile.reason.contains("turns"), futureFile.reason)
+
+        let damagedFile = try XCTUnwrap(loaded.unreadable.first { $0.url.lastPathComponent == damaged.lastPathComponent })
+        XCTAssertNil(damagedFile.schemaVersion)
+        XCTAssertFalse(damagedFile.isFromNewerVersion)
+        XCTAssertEqual(damagedFile.reason, "Not valid JSON")
+
+        let speakerFile = try XCTUnwrap(loaded.unreadable.first { $0.url.lastPathComponent == unknownSpeaker.lastPathComponent })
+        XCTAssertNil(speakerFile.schemaVersion)
+        XCTAssertEqual(speakerFile.reason, "Unexpected value at turns.0.speaker")
+
+        // Reasons name fields only, never meeting content, so they can be logged.
+        XCTAssertTrue(loaded.unreadable.allSatisfy { !$0.reason.contains("secret") })
+        // Nothing is deleted or rewritten.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: damaged.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: future.path))
     }
 
     func testPercentiles() {

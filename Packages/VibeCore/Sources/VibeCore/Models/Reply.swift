@@ -12,6 +12,13 @@ public enum ReplyIntent: String, Codable, Sendable, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    /// A move this build doesn't know (saved by a newer version) reads as `.auto`,
+    /// so the meeting still opens.
+    public init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        self = ReplyIntent(rawValue: rawValue) ?? .auto
+    }
+
     public var label: String {
         switch self {
         case .auto: return "Reply"
@@ -53,6 +60,46 @@ public enum ReplyVariant: String, Codable, Sendable {
     case regenerate
     /// Shorter version of the previous script.
     case shorter
+
+    /// A kind this build doesn't know (saved by a newer version) reads as `.fresh`.
+    public init(from decoder: Decoder) throws {
+        let rawValue = try decoder.singleValueContainer().decode(String.self)
+        self = ReplyVariant(rawValue: rawValue) ?? .fresh
+    }
+}
+
+/// Why a Reply or Ask questions produced nothing. Logic checks the case; the
+/// message is only for display.
+public enum ReplyFailure: Equatable, Sendable {
+    /// No line in the transcript to answer yet.
+    case nothingToReplyTo
+    /// Ask questions came back without a usable question.
+    case noQuestions
+    /// The model declined to write it.
+    case declined
+    /// Network, API key or server error.
+    case requestFailed
+
+    /// Maps a failed request.
+    public init(error: Error) {
+        if case .refusal = error as? ClaudeError {
+            self = .declined
+        } else {
+            self = .requestFailed
+        }
+    }
+
+    /// Whether the same request again can help (Try again).
+    public var canRetry: Bool { self != .nothingToReplyTo }
+
+    public var message: String {
+        switch self {
+        case .nothingToReplyTo: return "Nothing to reply to yet."
+        case .noQuestions: return "No questions came back. Try again."
+        case .declined: return "Claude declined this one. Try rephrasing with Steer."
+        case .requestFailed: return "Couldn't draft a reply. Check your connection or API key."
+        }
+    }
 }
 
 /// A reply script generated during a session.

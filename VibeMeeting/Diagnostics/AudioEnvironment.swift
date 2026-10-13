@@ -10,10 +10,18 @@ import Speech
 /// silently delivers zeros. Like other capture tools, this asks the private TCC
 /// framework; that works for an app distributed outside the App Store.
 enum SystemAudioPermission {
-    enum Status: String {
-        case authorized = "authorized"
-        case denied = "denied"
-        case unknown = "not determined"
+    enum Status {
+        case authorized
+        case denied
+        case unknown
+
+        var label: String {
+            switch self {
+            case .authorized: return "authorized"
+            case .denied: return "denied"
+            case .unknown: return "not determined"
+            }
+        }
     }
 
     private static let service = "kTCCServiceAudioCapture" as CFString
@@ -89,7 +97,7 @@ enum AudioEnvironment {
         lines.append("VibeMeeting \(AppVersion.display)")
         lines.append("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         lines.append("code signing: \(CodeSigning.summary)")
-        lines.append("system audio permission: \(SystemAudioPermission.status.rawValue)")
+        lines.append("system audio permission: \(SystemAudioPermission.status.label)")
         let mic: String
         switch AVAudioApplication.shared.recordPermission {
         case .granted: mic = "granted"

@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import CoreAudio
 import Foundation
+import VibeCore
 
 /// Captures what the other side says by tapping system audio with a Core Audio
 /// process tap.
@@ -249,15 +250,15 @@ final class SystemAudioTap: @unchecked Sendable {
             let probe = tapDenied.map { $0 ? "refused" : "ok" } ?? "unknown"
             let detail = "\(stream.summary); aggregate: \(self.composition.label); "
                 + "source: \(sourceLabel); "
-                + "permission preflight: \(SystemAudioPermission.status.rawValue); tap probe: \(probe)"
+                + "permission preflight: \(SystemAudioPermission.status.label); tap probe: \(probe)"
             diagnostics?.update {
                 $0.deviceDetail = detail
-                $0.captureState = "Starting"
+                $0.captureState = .starting
             }
 
             try check(AudioDeviceStart(aggregateID, procID), "Starting aggregate device")
             installListeners()
-            diagnostics?.update { $0.captureState = "Running" }
+            diagnostics?.update { $0.captureState = .running(detail: nil) }
             Log.audio.info("System audio tap started: \(detail, privacy: .public)")
         } catch {
             stopTap()
@@ -455,7 +456,7 @@ final class SystemAudioTap: @unchecked Sendable {
         } catch {
             Log.audio.error("Rebuilding tap failed: \(error.localizedDescription, privacy: .public)")
             diagnostics?.update {
-                $0.captureState = "Failed"
+                $0.captureState = .failed
                 $0.lastError = error.localizedDescription
             }
             failedRebuilds += 1
@@ -630,8 +631,8 @@ final class SystemAudioTap: @unchecked Sendable {
             // Across rebuilds; nil = no non-zero sample yet in this capture.
             $0.tracksNonZero = true
             $0.secondsSinceNonZero = lastSignalUptime.map { ProcessInfo.processInfo.systemUptime - $0 }
-            if $0.captureState.hasPrefix("Running") {
-                $0.captureState = "Running (\(health.cycles) IO cycles since last start)"
+            if $0.captureState.isRunning {
+                $0.captureState = .running(detail: "\(health.cycles) IO cycles since last start")
             }
         }
     }

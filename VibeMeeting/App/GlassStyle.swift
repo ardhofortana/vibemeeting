@@ -289,3 +289,32 @@ struct SoftGradientButtonStyle: ButtonStyle {
         }
     }
 }
+
+/// A warning on glass with a button that fixes it.
+struct GlassNotice: View {
+    let text: String
+    let systemImage: String
+    let action: String
+    let perform: () -> Void
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Glass.cardRadius, style: .continuous)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.orange)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(text)
+                    .font(.system(size: 12.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action, action: perform)
+                    .buttonStyle(GlassButtonStyle(minHeight: 28))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.orange.opacity(0.08), in: shape)
+        .overlay(shape.strokeBorder(Color.orange.opacity(0.3)))
+    }
+}

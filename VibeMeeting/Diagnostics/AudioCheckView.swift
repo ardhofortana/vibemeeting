@@ -98,7 +98,7 @@ struct AudioCheckView: View {
                 }
                 .font(.callout)
             }
-            LabeledContent("System audio permission", value: SystemAudioPermission.status.rawValue)
+            LabeledContent("System audio permission", value: SystemAudioPermission.status.label)
                 .font(.callout)
             if let report = app.lastMeetingReport {
                 CopyButton(title: "Copy last meeting's report", text: report)
@@ -219,7 +219,7 @@ struct DiagnosticsPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Group {
-                row("Capture", snapshot.captureState)
+                row("Capture", snapshot.captureState.label)
                 row("Device", snapshot.deviceDetail)
                 row("Buffers in", "\(snapshot.captureBuffers)" + (snapshot.unreadableBuffers > 0 ? " (\(snapshot.unreadableBuffers) unreadable)" : ""))
                 if let layout = snapshot.unreadableLayout {
@@ -242,7 +242,7 @@ struct DiagnosticsPanel: View {
             }
             .font(.caption)
             Group {
-                row("Transcriber", snapshot.transcriberState)
+                row("Transcriber", snapshot.transcriberState.label)
                 row("To speech", "\(snapshot.buffersToAnalyzer) chunks · \(snapshot.speechLevelChunks) speech-level" + (snapshot.droppedChunks > 0 ? " · \(snapshot.droppedChunks) dropped" : "") + (snapshot.conversionFailures > 0 ? " · \(snapshot.conversionFailures) failed" : ""))
                 row("Speech gets", snapshot.buffersToAnalyzer == 0 ? "–" : (snapshot.analyzerPeakRMS > AudioLevelMeter.silenceRMS ? String(format: "sound (%.4f)", snapshot.analyzerPeakRMS) : "only silence"))
                 row("Results", "\(snapshot.volatileResults) live · \(snapshot.finalResults) final")

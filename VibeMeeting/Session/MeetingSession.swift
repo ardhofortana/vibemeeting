@@ -33,7 +33,7 @@ final class MeetingSession: Identifiable {
         case drafting
         case streaming
         case done
-        case failed(String)
+        case failed(ReplyFailure)
     }
 
     struct Notice: Identifiable, Equatable {
@@ -331,7 +331,7 @@ final class MeetingSession: Identifiable {
     /// ⌥Space and the intent hotkeys.
     func reply(intent: ReplyIntent = .auto) {
         guard let target = transcript.replyTarget(selectedTurnID: selectedTurnID) else {
-            replyState = .failed("Nothing to reply to yet.")
+            replyState = .failed(.nothingToReplyTo)
             return
         }
         let steer = steerText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -523,7 +523,7 @@ final class MeetingSession: Identifiable {
                                 self.record.stats.estimatedCost += model.pricing?.cost(of: usage) ?? 0
                             }
                             self.record.stats.failedCount += 1
-                            self.replyState = .failed("No questions came back. Try again.")
+                            self.replyState = .failed(.noQuestions)
                             return
                         }
                         script.text = questions.joined(separator: "\n")
@@ -544,7 +544,7 @@ final class MeetingSession: Identifiable {
                     guard let self, !Task.isCancelled else { return }
                     Log.reply.error("Reply failed: \(error.localizedDescription, privacy: .public)")
                     self.record.stats.failedCount += 1
-                    self.replyState = .failed(Self.message(for: error))
+                    self.replyState = .failed(ReplyFailure(error: error))
                     return
                 }
             }
@@ -564,13 +564,6 @@ final class MeetingSession: Identifiable {
         }
         Log.reply.info("Reply done: first token \(script.firstTokenLatency ?? -1, privacy: .public)s, cache read \(script.usage?.cacheReadInputTokens ?? 0, privacy: .public)")
         save()
-    }
-
-    static func message(for error: Error) -> String {
-        if case .refusal = error as? ClaudeError {
-            return "Claude declined this one. Try rephrasing with Steer."
-        }
-        return "Couldn't draft a reply. Check your connection or API key."
     }
 
     nonisolated static func seconds(_ duration: Duration) -> Double {
@@ -689,7 +682,7 @@ final class MeetingSession: Identifiable {
             return
         }
         // A recognizer that stopped has its own notice; the hints below would mislead.
-        guard snapshot.transcriberState.hasPrefix("Running") else {
+        guard snapshot.transcriberState.isRunning else {
             removeNotice(kind)
             return
         }

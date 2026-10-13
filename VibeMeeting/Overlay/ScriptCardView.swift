@@ -11,8 +11,8 @@ struct ScriptCardView: View {
         switch session.replyState {
         case .idle:
             EmptyView()
-        case .failed(let message):
-            ResponseFailureRow(message: message)
+        case .failed(let failure):
+            ResponseFailureRow(failure: failure)
                 .responseCard(highlighted: true)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 10)
@@ -34,15 +34,15 @@ struct ScriptCardView: View {
 
 /// A failed Reply or Ask questions, with Try again when there is something to retry.
 struct ResponseFailureRow: View {
-    let message: String
+    let failure: ReplyFailure
     @Environment(MeetingSession.self) private var session
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-            Text(message).font(.system(size: 13))
+            Text(failure.message).font(.system(size: 13))
             Spacer()
-            if session.currentScript != nil, message != "Nothing to reply to yet." {
+            if session.currentScript != nil, failure.canRetry {
                 Button("Try again") { session.retry() }
                     .buttonStyle(PillButtonStyle())
             }

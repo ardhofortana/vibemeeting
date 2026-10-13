@@ -16,6 +16,8 @@ final class AppModel {
     let audioCheck = AudioCheckModel()
 
     private(set) var records: [MeetingRecord] = []
+    /// Saved meeting files that couldn't be read (newer version or damaged). They stay on disk untouched.
+    private(set) var unreadableFiles: [SessionStore.UnreadableFile] = []
     private(set) var activeSession: MeetingSession?
     private(set) var recapsInProgress: Set<UUID> = []
     /// Diagnostics from the last meeting (formats, counters, errors; no transcript text),
@@ -36,7 +38,12 @@ final class AppModel {
             // A temporary directory is always creatable.
             self.store = try! SessionStore(directory: fallback)
         }
-        records = store.loadAll()
+        let loaded = store.loadAll()
+        records = loaded.records
+        unreadableFiles = loaded.unreadable
+        for file in loaded.unreadable {
+            Log.app.error("Can't read saved meeting \(file.url.lastPathComponent, privacy: .public): \(file.reason, privacy: .public)")
+        }
         Hotkeys.install(app: self)
     }
 
@@ -146,7 +153,7 @@ final class AppModel {
     func generateRecap(for id: UUID) async {
         // Never from the live copy: while a meeting is still saving, the final
         // record would be overwritten with an older one when the recap returns.
-        guard activeSession?.id != id, var record = record(id: id), !recapsInProgress.contains(id) else { return }
+        guard activeSession?.id != id, var record = record(id: id), !record.isFromNewerVersion, !recapsInProgress.contains(id) else { return }
         guard settings.hasAPIKey else {
             record.recapError = "Add your Claude API key in Settings to create a recap."
             save(record)
@@ -197,15 +204,20 @@ final class AppModel {
     }
 
     func rename(id: UUID, to name: String) {
-        guard var record = record(id: id), activeSession?.id != id else { return }
+        guard var record = record(id: id), !record.isFromNewerVersion, activeSession?.id != id else { return }
         record.name = name
         save(record)
     }
 
     func toggleStar(id: UUID) {
-        guard var record = record(id: id), activeSession?.id != id else { return }
+        guard var record = record(id: id), !record.isFromNewerVersion, activeSession?.id != id else { return }
         record.isStarred.toggle()
         save(record)
+    }
+
+    /// Shows the files that couldn't be read in Finder.
+    func revealUnreadableFiles() {
+        NSWorkspace.shared.activateFileViewerSelecting(unreadableFiles.map(\.url))
     }
 
     private func save(_ record: MeetingRecord) {

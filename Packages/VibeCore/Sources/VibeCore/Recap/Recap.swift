@@ -17,18 +17,20 @@ public struct Recap: Codable, Equatable, Sendable {
 
         enum CodingKeys: String, CodingKey { case task, owner, due }
 
+        // The model writes the prompt token ("You"); files saved before schema
+        // version 2 hold the label, any case. Anything else was the other side.
         public init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             task = try container.decode(String.self, forKey: .task)
-            let ownerLabel = try container.decode(String.self, forKey: .owner)
-            owner = ownerLabel.lowercased() == "you" ? .you : .them
+            owner = Speaker(token: try container.decode(String.self, forKey: .owner)) ?? .them
             due = try container.decodeIfPresent(String.self, forKey: .due) ?? ""
         }
 
+        /// Saves the owner by raw value, never by a display label.
         public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(task, forKey: .task)
-            try container.encode(owner.label, forKey: .owner)
+            try container.encode(owner.rawValue, forKey: .owner)
             try container.encode(due, forKey: .due)
         }
     }
@@ -90,7 +92,7 @@ public struct Recap: Codable, Equatable, Sendable {
                     "required": ["task", "owner", "due"],
                     "properties": .object([
                         "task": .object(["type": "string", "description": "The concrete next step."]),
-                        "owner": .object(["type": "string", "enum": ["You", "Them"]]),
+                        "owner": .object(["type": "string", "enum": .array([Speaker.you, .them].map { .string($0.promptToken) })]),
                         "due": .object(["type": "string", "description": "Deadline as mentioned, or an empty string if none was mentioned."]),
                     ]),
                 ]),

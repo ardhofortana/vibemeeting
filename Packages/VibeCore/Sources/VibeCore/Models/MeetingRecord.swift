@@ -2,7 +2,14 @@ import Foundation
 
 /// Everything saved for one meeting. Audio is never part of it.
 public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
+    /// Format version written by this build. History:
+    /// 1: no version field; action item owners saved as labels ("You").
+    /// 2: action item owners saved by raw value ("you").
+    public static let currentSchemaVersion = 2
+
     public let id: UUID
+    /// Format version of the saved file. `SessionStore.save` writes the current one.
+    public var schemaVersion: Int
     public var name: String
     public var startedAt: Date
     public var endedAt: Date?
@@ -42,6 +49,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         isStarred: Bool = false
     ) {
         self.id = id
+        self.schemaVersion = Self.currentSchemaVersion
         self.name = name
         self.startedAt = startedAt
         self.endedAt = endedAt
@@ -64,6 +72,7 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         name = try container.decode(String.self, forKey: .name)
         startedAt = try container.decode(Date.self, forKey: .startedAt)
         endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
@@ -82,6 +91,10 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         isStarred = try container.decodeIfPresent(Bool.self, forKey: .isStarred) ?? false
     }
 
+    /// Saved by a newer VibeMeeting. Shown read-only and never saved by this
+    /// build, so data it doesn't know about isn't lost.
+    public var isFromNewerVersion: Bool { schemaVersion > Self.currentSchemaVersion }
+
     /// Name shown in lists.
     public var displayName: String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -96,10 +109,20 @@ public struct MeetingRecord: Identifiable, Codable, Equatable, Sendable {
         endedAt.map { $0.timeIntervalSince(startedAt) }
     }
 
-    /// Plain-text transcript with time offsets from the start.
+    /// Plain-text transcript with time offsets from the start, for the user
+    /// (speakers by their display label).
     public func transcriptText() -> String {
+        transcriptText(speakerName: \.label)
+    }
+
+    /// The same transcript for prompts, with the speakers' prompt tokens.
+    public func promptTranscriptText() -> String {
+        transcriptText(speakerName: \.promptToken)
+    }
+
+    private func transcriptText(speakerName: (Speaker) -> String) -> String {
         turns.filter { !$0.text.isEmpty }.map { turn in
-            "[\(Self.offset(turn.startedAt.timeIntervalSince(startedAt)))] \(turn.speaker.label): \(turn.text)"
+            "[\(Self.offset(turn.startedAt.timeIntervalSince(startedAt)))] \(speakerName(turn.speaker)): \(turn.text)"
         }.joined(separator: "\n")
     }
 

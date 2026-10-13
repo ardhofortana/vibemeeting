@@ -55,12 +55,21 @@ struct MainWindowView: View {
 
 /// Search, filters, and the meetings grouped by day, newest first.
 private struct MeetingList: View {
-    enum Filter: String, CaseIterable, Identifiable {
-        case all = "All"
-        case recent = "Recent"
-        case recaps = "Recaps"
-        case starred = "Starred"
-        var id: String { rawValue }
+    enum Filter: CaseIterable, Identifiable {
+        case all
+        case recent
+        case recaps
+        case starred
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .all: return "All"
+            case .recent: return "Recent"
+            case .recaps: return "Recaps"
+            case .starred: return "Starred"
+            }
+        }
 
         func includes(_ record: MeetingRecord, since weekAgo: Date) -> Bool {
             switch self {
@@ -95,6 +104,15 @@ private struct MeetingList: View {
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
                 .padding(.bottom, 10)
+            if !app.unreadableFiles.isEmpty {
+                GlassNotice(
+                    text: Self.unreadableMessage(app.unreadableFiles),
+                    systemImage: "exclamationmark.triangle.fill",
+                    action: "Show in Finder"
+                ) { app.revealUnreadableFiles() }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+            }
             if app.records.isEmpty {
                 emptyState("No meetings yet", "Start one with the + button or from the menu bar.", systemImage: "waveform")
             } else if sections.isEmpty {
@@ -115,6 +133,19 @@ private struct MeetingList: View {
         } message: { _ in
             Text("The transcript, scripts, context and recap are removed from this Mac. This can't be undone.")
         }
+    }
+
+    /// Why some saved meetings aren't in the list. Their files are never changed.
+    static func unreadableMessage(_ files: [SessionStore.UnreadableFile]) -> String {
+        let newer = files.allSatisfy(\.isFromNewerVersion)
+        if files.count == 1 {
+            return newer
+                ? "1 saved meeting can't be opened because a newer version of VibeMeeting saved it. Update VibeMeeting to open it. Its file is kept as it is."
+                : "1 saved meeting can't be opened. A newer version of VibeMeeting saved it, or its file is damaged. The file is kept as it is."
+        }
+        return newer
+            ? "\(files.count) saved meetings can't be opened because a newer version of VibeMeeting saved them. Update VibeMeeting to open them. Their files are kept as they are."
+            : "\(files.count) saved meetings can't be opened. A newer version of VibeMeeting saved them, or their files are damaged. The files are kept as they are."
     }
 
     // MARK: Search and filters
@@ -172,7 +203,7 @@ private struct MeetingList: View {
     private var filterChips: some View {
         HStack(spacing: 6) {
             ForEach(Filter.allCases) { item in
-                Button(item.rawValue) { filter = item }
+                Button(item.title) { filter = item }
                     .buttonStyle(FilterChipStyle(selected: filter == item))
                     .accessibilityAddTraits(filter == item ? .isSelected : [])
             }
@@ -291,7 +322,7 @@ private struct MeetingList: View {
         if !trimmed.isEmpty {
             emptyState(
                 "No results",
-                filter == .all ? "Nothing matches “\(trimmed)”." : "Nothing in \(filter.rawValue) matches “\(trimmed)”.",
+                filter == .all ? "Nothing matches “\(trimmed)”." : "Nothing in \(filter.title) matches “\(trimmed)”.",
                 systemImage: "magnifyingglass",
                 action: ("Clear search", { query = "" })
             )
@@ -490,13 +521,14 @@ private struct MeetingRow: View {
         .accessibilityLabel("Actions for \(record.displayName)")
     }
 
-    /// Off while the meeting is live; its record is still being saved.
+    /// Off while the meeting is live; its record is still being saved. A meeting
+    /// from a newer version can only be deleted.
     @ViewBuilder
     private var actions: some View {
         Button(record.isStarred ? "Unstar" : "Star", action: star)
-            .disabled(isLive)
+            .disabled(isLive || record.isFromNewerVersion)
         Button("Rename…", action: rename)
-            .disabled(isLive)
+            .disabled(isLive || record.isFromNewerVersion)
         Divider()
         Button("Delete…", role: .destructive, action: delete)
             .disabled(isLive)

@@ -28,8 +28,8 @@ struct ResponseListView: View {
                         ResponseCard(script: script, isLatest: script.id == latestID)
                             .responseCard(highlighted: script.id == latestID)
                     }
-                    if case .failed(let message) = session.replyState {
-                        ResponseFailureRow(message: message)
+                    if case .failed(let failure) = session.replyState {
+                        ResponseFailureRow(failure: failure)
                             .responseCard(highlighted: true)
                     }
                 }

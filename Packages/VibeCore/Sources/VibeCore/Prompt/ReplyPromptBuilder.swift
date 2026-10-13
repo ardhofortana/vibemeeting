@@ -196,8 +196,9 @@ public struct ReplyPromptBuilder: Sendable {
         return blocks
     }
 
+    /// One transcript line, named by the speaker's prompt token.
     static func transcriptLine(_ turn: TranscriptTurn) -> String {
-        "\(turn.speaker.label): \(turn.text)\(turn.isLive ? " …" : "")"
+        "\(turn.speaker.promptToken): \(turn.text)\(turn.isLive ? " …" : "")"
     }
 
     /// The recent turns, closing the earlier transcript when there is one.
@@ -227,7 +228,7 @@ public struct ReplyPromptBuilder: Sendable {
 
         parts.append(recentTranscriptText(ask.recentTurns, afterEarlier: !ask.earlierChunks.isEmpty))
 
-        var target = "<target speaker=\"\(ask.target.speaker.label)\">\n\(ask.target.text)\n</target>"
+        var target = "<target speaker=\"\(ask.target.speaker.promptToken)\">\n\(ask.target.text)\n</target>"
         if ask.target.isLive {
             target += "\nThey may still be talking. This is what they have said so far."
         }

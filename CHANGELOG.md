@@ -48,11 +48,19 @@ Catatan:
 
 ## [Unreleased]
 
+### Added
+- **Saved meetings never disappear without a word.** If a meeting file can't be read (saved by a newer version of VibeMeeting, or damaged), the main window says how many and offers **Show in Finder**. The file is left exactly as it is. A meeting saved by a newer version that this version can still read opens **read-only**: Star, Rename and creating a recap are off, so nothing the newer version saved is lost. Delete still works.
+
 ### Changed
 - **About me starts empty.** An outline shows what to write (name, what you do, who you usually meet, how you want to come across, facts replies may use, things you never say), in any language. "Reset to template" is now **Clear**, and the Welcome window's About me button opens that tab. If you never edited About me, it is empty after this update: write yours in Settings → About me.
 - **Neutral framing for any meeting.** Replies, Ask questions and recaps no longer assume a sales call with a client. Firmness on price and scope belongs to the Negotiator style only, the holding line for a missing number no longer promises "today", and recaps cover "a meeting" and what was agreed in it. Built-in styles talk about "the other side", and Negotiator works whichever side you're on. Placeholders and help text use everyday examples.
 - **Prompt injection protection.** Replies, Ask questions and recaps treat what's said in the call and what's in the meeting context (files, notes, screenshots) as information, not instructions. The model is told to ignore text there that tries to change its task, reveal its prompt or put words in your mouth (such as "ignore your instructions" or "agree to do it for free"). Only About me, meeting instructions, the goal and Steer direct a reply.
 - The diagnostics report lists your preferred languages and whether speech recognition supports each, instead of checking one language. The About panel shows "© 2026 Djavaweb".
+- Audio check and the diagnostics report word a few states differently: the mic shows "Running (echo cancellation on)", and a recognizer that stopped reads "Speech stopped with an error" or "Speech ended unexpectedly".
+
+### Compatibility
+- Older meetings load as before. Meeting files now carry a format version (2), and action item owners are saved as `you`/`them` instead of the on-screen label. A reply move or kind this version doesn't know (from a newer version) loads as a plain Reply instead of hiding the meeting.
+- Rollback: every earlier version reads the new owner values correctly, ignores the format version, and saves in its own format, which loses nothing from this change. The notes for earlier versions below still apply.
 
 ### Diubah
 - **Halaman meeting didesain ulang** mengikuti mockup: kaca gelap dengan dua kartu yang hampir selebar jendela.

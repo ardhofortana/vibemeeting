@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import VibeCore
 
 /// Captures the user's own voice and always hands downstream an owned mono
 /// Float32 copy at the input's sample rate, so the "You" meter shows exactly
@@ -224,7 +225,7 @@ final class MicrophoneCapture: @unchecked Sendable {
         let reason = voiceProcessingOffReason.map { " (echo cancellation off: \($0))" } ?? ""
         let detail = "\(routeSummary); \(mode); input \(described) → mono\(reason)"
         diagnostics?.update {
-            $0.captureState = "Running, \(mode)"
+            $0.captureState = .running(detail: mode)
             $0.deviceDetail = detail
             $0.channelPeakRMS = []
         }
@@ -274,7 +275,7 @@ final class MicrophoneCapture: @unchecked Sendable {
             try startEngine(voiceProcessing: false)
         } catch {
             diagnostics?.update {
-                $0.captureState = "Failed"
+                $0.captureState = .failed
                 $0.lastError = String(describing: error)
             }
             onReconnect?(.failure(error))
@@ -300,7 +301,7 @@ final class MicrophoneCapture: @unchecked Sendable {
                 // Bluetooth mics can take a moment to switch profiles.
                 scheduleHealthCheck(generation: generation, after: 3, attempt: attempt + 1)
             } else {
-                diagnostics?.update { $0.captureState = "No audio from the microphone" }
+                diagnostics?.update { $0.captureState = .noAudio }
                 onReconnect?(.failure(Failure.noAudio))
             }
             return
@@ -384,7 +385,7 @@ final class MicrophoneCapture: @unchecked Sendable {
                 announceFallback("Echo cancellation kept resetting the audio device")
                 restartTimes = [now]
             } else {
-                diagnostics?.update { $0.captureState = "Stopped: device keeps changing" }
+                diagnostics?.update { $0.captureState = .deviceKeepsChanging }
                 stoppedForRestarts = true
                 onReconnect?(.failure(Failure.tooManyRestarts))
                 return
@@ -397,7 +398,7 @@ final class MicrophoneCapture: @unchecked Sendable {
             onReconnect?(.success(()))
         } catch {
             diagnostics?.update {
-                $0.captureState = "Failed"
+                $0.captureState = .failed
                 $0.lastError = String(describing: error)
             }
             onReconnect?(.failure(error))

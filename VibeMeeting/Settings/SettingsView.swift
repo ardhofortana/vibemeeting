@@ -403,7 +403,7 @@ private struct AudioSettings: View {
             }
 
             Section("Permissions") {
-                LabeledContent("System audio permission", value: SystemAudioPermission.status.rawValue)
+                LabeledContent("System audio permission", value: SystemAudioPermission.status.label)
                 HStack {
                     Button("Allow audio capture") { Task { await prime() } }
                         .disabled(priming)

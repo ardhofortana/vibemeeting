@@ -117,12 +117,12 @@ final class LiveTranscriber: @unchecked Sendable {
             return generation
         }
         guard let token else { return }
-        diagnostics.update { $0.transcriberState = "Checking speech model" }
+        diagnostics.update { $0.transcriberState = .checkingModel }
         do {
             try await startAnalyzer(token: token, onUpdate: onUpdate, onError: onError)
         } catch {
             diagnostics.update {
-                $0.transcriberState = "Failed to start"
+                $0.transcriberState = .failedToStart
                 $0.lastError = Self.describe(error)
             }
             throw error
@@ -132,13 +132,13 @@ final class LiveTranscriber: @unchecked Sendable {
     private func startAnalyzer(token: Int, onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler) async throws {
         let diagnostics = self.diagnostics
         let (transcriber, locale) = try await Self.makeTranscriber()
-        diagnostics.update { $0.transcriberState = "Preparing speech model" }
+        diagnostics.update { $0.transcriberState = .preparingModel }
         try await Self.ensureAssets(for: transcriber, locale: locale)
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             throw Failure.noAudioFormat
         }
         diagnostics.update {
-            $0.transcriberState = "Starting analyzer"
+            $0.transcriberState = .startingAnalyzer
             $0.analyzerFormat = StreamDiagnostics.describe(format)
         }
 
@@ -167,7 +167,7 @@ final class LiveTranscriber: @unchecked Sendable {
                     self?.closeInput(token: token)
                     Log.speech.error("Transcriber \(speaker.rawValue, privacy: .public) results ended on their own")
                     diagnostics.update {
-                        $0.transcriberState = "Ended unexpectedly"
+                        $0.transcriberState = .endedUnexpectedly
                         $0.lastError = Failure.endedUnexpectedly.errorDescription
                     }
                     await onError(Failure.endedUnexpectedly)
@@ -178,7 +178,7 @@ final class LiveTranscriber: @unchecked Sendable {
                 self?.closeInput(token: token)
                 Log.speech.error("Transcriber \(speaker.rawValue, privacy: .public) stopped: \(String(describing: error), privacy: .public)")
                 diagnostics.update {
-                    $0.transcriberState = "Stopped with an error"
+                    $0.transcriberState = .stoppedWithError
                     $0.lastError = Self.describe(error)
                 }
                 await onError(error)
@@ -209,10 +209,10 @@ final class LiveTranscriber: @unchecked Sendable {
             continuation.finish()
             resultsTask.cancel()
             await analyzer.cancelAndFinishNow()
-            diagnostics.update { $0.transcriberState = "Stopped" }
+            diagnostics.update { $0.transcriberState = .stopped }
             return
         }
-        diagnostics.update { $0.transcriberState = "Running (\(locale.identifier(.bcp47)))" }
+        diagnostics.update { $0.transcriberState = .running(locale: locale.identifier(.bcp47)) }
         Log.speech.info("Transcriber \(speaker.rawValue, privacy: .public) started, \(StreamDiagnostics.describe(format), privacy: .public)")
     }
 
@@ -320,7 +320,7 @@ final class LiveTranscriber: @unchecked Sendable {
             _ = await firstResult(within: 2) { await resultsTask.value }
             resultsTask.cancel()
         }
-        diagnostics.update { $0.transcriberState = "Stopped" }
+        diagnostics.update { $0.transcriberState = .stopped }
     }
 
     // MARK: - Errors
