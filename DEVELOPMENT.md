@@ -232,3 +232,7 @@ Notes:
 - [README.md](README.md) is for people who use the app, in English; [README.id.md](README.id.md) is its Indonesian translation. English is the source: change README.md first, then the translation.
 - [CHANGELOG.md](CHANGELOG.md) is in English and written for users. Developer details go here.
 - [docs/COPY.md](docs/COPY.md): voice, glossary and translation-ready strings.
+
+## Comparing speech engines
+
+`scripts/asr-compare.sh "<YouTube URL>" [minutes]` transcribes the first minutes of a video with human-made English subtitles twice, with Apple's on-device engine (via [yap](https://github.com/finnvoor/yap)) and with NVIDIA Parakeet TDT 0.6B v3 (via [parakeet-mlx](https://github.com/senstella/parakeet-mlx)), and prints each one's word error rate against the subtitles. It installs its tools with Homebrew and uv and works in `~/Desktop/asr-test/<video id>`; the app is not involved.
