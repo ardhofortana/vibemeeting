@@ -4,6 +4,11 @@
 # video's human-made subtitles. Nothing in the app changes.
 #
 #   scripts/asr-compare.sh "https://www.youtube.com/watch?v=..." [minutes]
+#   scripts/asr-compare.sh --score <video id> <transcript file>
+#
+# The second form scores another transcript of the same audio, e.g. one
+# copied from VibeMeeting (Transcript → Copy transcript, Them lines only),
+# next to Apple and Parakeet, against the reference saved by the first run.
 #
 # Installs what it needs with Homebrew (yt-dlp, ffmpeg, uv, yap) and uv
 # (parakeet-mlx), downloads the audio and subtitles into
@@ -12,6 +17,17 @@
 # whole file here, not live as in the app, so its result is a little better
 # than in a meeting.
 set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+
+if [ "${1:-}" = "--score" ]; then
+    dir="$HOME/Desktop/asr-test/${2:?video id, e.g. _y9JuojAIg0}"
+    file="${3:?transcript file}"
+    case "$file" in /*) ;; *) file="$PWD/$file" ;; esac
+    cd "$dir"
+    python3 "$here/asr_score.py" --reference reference.txt Apple=apple.txt "Parakeet v3=parakeet.txt" "This file=$file"
+    exit 0
+fi
 
 url="${1:-}"
 minutes="${2:-5}"
@@ -74,78 +90,6 @@ cp "$(ls parakeet-out/*.txt | head -n 1)" parakeet.txt
 parakeet_time=$(( $(date +%s) - start ))
 
 echo "== Comparing"
-python3 - "$reference_vtt" "$seconds" "$apple_time" "$parakeet_time" <<'PY'
-import html, re, sys
-
-vtt_path, seconds, apple_time, parakeet_time = sys.argv[1], float(sys.argv[2]), sys.argv[3], sys.argv[4]
-
-def to_seconds(stamp):
-    parts = stamp.replace(",", ".").split(":")
-    value = 0.0
-    for part in parts:
-        value = value * 60 + float(part)
-    return value
-
-# Reference: subtitle cues that start inside the cut, without tags and sound labels.
-lines, keep = [], False
-for raw in open(vtt_path, encoding="utf-8"):
-    line = raw.strip()
-    if "-->" in line:
-        keep = to_seconds(line.split("-->")[0].strip()) < seconds
-        continue
-    if not line or not keep or line.startswith(("WEBVTT", "Kind:", "Language:", "NOTE")):
-        continue
-    line = html.unescape(re.sub(r"<[^>]+>", "", line))
-    line = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", line)  # [Music], (laughs)
-    line = re.sub(r"^\s*(>>|-)\s*", "", line)           # speaker change marks
-    if line and (not lines or lines[-1] != line):
-        lines.append(line)
-reference = " ".join(lines)
-open("reference.txt", "w", encoding="utf-8").write(reference)
-
-def words(text):
-    text = text.lower().replace("’", "'").replace("‘", "'")
-    text = re.sub(r"[-–—/]", " ", text)
-    text = re.sub(r"[^\w\s']", " ", text)
-    return [w.strip("'") for w in text.split() if w.strip("'")]
-
-def align(ref, hyp):
-    """Word-level edit distance with the substitutions it implies."""
-    n, m = len(ref), len(hyp)
-    d = [[0] * (m + 1) for _ in range(n + 1)]
-    for i in range(n + 1):
-        d[i][0] = i
-    for j in range(m + 1):
-        d[0][j] = j
-    for i in range(1, n + 1):
-        for j in range(1, m + 1):
-            cost = 0 if ref[i - 1] == hyp[j - 1] else 1
-            d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
-    i, j, subs, dels, ins, pairs = n, m, 0, 0, 0, []
-    while i > 0 or j > 0:
-        if i > 0 and j > 0 and d[i][j] == d[i - 1][j - 1] + (0 if ref[i - 1] == hyp[j - 1] else 1):
-            if ref[i - 1] != hyp[j - 1]:
-                subs += 1
-                pairs.append((ref[i - 1], hyp[j - 1]))
-            i, j = i - 1, j - 1
-        elif i > 0 and d[i][j] == d[i - 1][j] + 1:
-            dels += 1
-            i -= 1
-        else:
-            ins += 1
-            j -= 1
-    return d[n][m], subs, dels, ins, list(reversed(pairs))
-
-ref = words(reference)
-print(f"\nReference: {len(ref)} words from the subtitles (first {int(seconds // 60)} min)\n")
-for name, path, took in [("Apple", "apple.txt", apple_time), ("Parakeet v3", "parakeet.txt", parakeet_time)]:
-    hyp = words(open(path, encoding="utf-8").read())
-    errors, subs, dels, ins, pairs = align(ref, hyp)
-    wer = errors / max(1, len(ref))
-    print(f"{name:12} WER {wer * 100:5.1f}%  (accuracy {max(0, 100 - wer * 100):5.1f}%)  "
-          f"substituted {subs}, missed {dels}, extra {ins}  [{took} s]")
-    shown = ", ".join(f"{r}→{h}" for r, h in pairs[:15])
-    print(f"{'':12} first mix-ups: {shown or 'none'}\n")
-print("Files: reference.txt, apple.txt, parakeet.txt in this folder.")
-print("Subtitles are sometimes lightly edited, which raises both WERs alike; compare the two numbers with each other.")
-PY
+python3 "$here/asr_score.py" --vtt "$reference_vtt" --seconds "$seconds" \
+    "Apple=apple.txt:$apple_time" "Parakeet v3=parakeet.txt:$parakeet_time"
+echo "Files: reference.txt, apple.txt, parakeet.txt in $dir"
