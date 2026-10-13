@@ -7,6 +7,8 @@ import Foundation
 /// so rolling back to an earlier version still finds them.
 enum IdentityMigration {
     static let legacyBundleID = "com.ardhofortana.VibeMeeting"
+    /// Where the earlier app saved meetings; release builds still use it.
+    static let legacyDataFolder = "VibeMeeting"
     private static let doneKey = "migratedFromLegacyIdentity"
 
     /// Copies `keys` from the earlier identity's settings, once, and only while
@@ -36,6 +38,33 @@ enum IdentityMigration {
         }
         Log.app.info("Copied \(copied, privacy: .public) settings from the earlier app identity")
         return true
+    }
+
+    /// A development build keeps its meetings in its own folder, so on the move
+    /// it gets a copy of the earlier app's meetings. The originals stay for the
+    /// release build and for rolling back; later meetings aren't synced.
+    static func copyMeetings(into folderName: String, fileManager: FileManager = .default) {
+        guard folderName != legacyDataFolder,
+              let support = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return }
+        let source = support.appendingPathComponent(legacyDataFolder, isDirectory: true).appendingPathComponent("Sessions", isDirectory: true)
+        let destination = support.appendingPathComponent(folderName, isDirectory: true).appendingPathComponent("Sessions", isDirectory: true)
+        guard let files = try? fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+            .filter({ $0.pathExtension == "json" }), !files.isEmpty
+        else { return }
+        do {
+            try fileManager.createDirectory(at: destination, withIntermediateDirectories: true)
+            var copied = 0
+            for file in files {
+                let target = destination.appendingPathComponent(file.lastPathComponent)
+                guard !fileManager.fileExists(atPath: target.path) else { continue }
+                try fileManager.copyItem(at: file, to: target)
+                copied += 1
+            }
+            Log.app.info("Copied \(copied, privacy: .public) meetings from the earlier app")
+        } catch {
+            Log.app.error("Copying meetings from the earlier app failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Copies the Claude API key from the earlier identity's Keychain item, off

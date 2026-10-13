@@ -41,7 +41,10 @@ final class AppModel {
         )
         let settings = AppSettings()
         self.settings = settings
-        if migrated { IdentityMigration.copyAPIKey(into: settings) }
+        if migrated {
+            IdentityMigration.copyAPIKey(into: settings)
+            IdentityMigration.copyMeetings(into: AppIdentity.dataFolderName)
+        }
 
         if let store = try? SessionStore(directory: SessionStore.defaultDirectory(appFolder: AppIdentity.dataFolderName)) {
             self.store = store

@@ -42,7 +42,7 @@ The Team goes into `Configs/Local.xcconfig`, which git ignores and `Configs/Sign
 | Name in Finder and System Settings | VibeMeeting | VibeMeeting Dev |
 | Meetings and diagnostics | `~/Library/Application Support/VibeMeeting` | `~/Library/Application Support/VibeMeeting Dev` |
 
-The development build is a separate app with its own settings, Keychain key, privacy permissions and meetings folder, so it never touches a release install. It starts with no meetings; to see release meetings in it, copy the files from `VibeMeeting/Sessions` into `VibeMeeting Dev/Sessions`.
+The development build is a separate app with its own settings, Keychain key, privacy permissions and meetings folder, so it never touches a release install. On its first launch after the move from the earlier bundle ID it copies the earlier app's meetings from `VibeMeeting/Sessions`; after that the folders are separate. To see release meetings in it later, copy the files from `VibeMeeting/Sessions` into `VibeMeeting Dev/Sessions`.
 
 `scripts/bundle-id.sh` prints the release bundle ID and `scripts/bundle-id.sh debug` the development one, read from `project.yml`. Scripts and docs use it instead of hardcoding either.
 
