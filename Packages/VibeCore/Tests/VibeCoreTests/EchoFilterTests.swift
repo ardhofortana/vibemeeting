@@ -41,8 +41,11 @@ final class EchoFilterTests: XCTestCase {
     // MARK: - Garbled echo
 
     func testMishearingsByLetterSoundAndStem() {
-        for (heard, said) in [("women's", "Yemen's"), ("healthies", "halbies"), ("reporter", "reporting"), ("tax", "attacks"), ("back", "backing"), ("weaks", "weeks")] {
+        for (heard, said) in [("women's", "Yemen's"), ("healthies", "halbies"), ("tax", "attacks"), ("weaks", "weeks")] {
             XCTAssertEqual(EchoFilter.relation(heard, said.lowercased()), .similar, "\(heard) / \(said)")
+        }
+        for (heard, said) in [("reporter", "reporting"), ("back", "backing"), ("subscription", "subscriptions"), ("fails", "failing")] {
+            XCTAssertEqual(EchoFilter.relation(heard, said), .inflected, "\(heard) / \(said)")
         }
         for (heard, said) in [("plane", "claimed"), ("the", "who"), ("14", "40"), ("effects", "attacks"), ("major", "injured")] {
             XCTAssertEqual(EchoFilter.relation(heard, said), .different, "\(heard) / \(said)")
@@ -120,6 +123,10 @@ final class EchoFilterTests: XCTestCase {
             ("I can definitely do the new store in two weeks, and then we can look at the subscription setup and the loyalty program after that.", "Could you do the new store in two weeks and then the subscription setup and the loyalty program after that?"),
             ("Yeah, we can build the new store in two weeks and then we'd set up subscriptions right after that.", "Could you build the new store in two weeks and then set up the subscriptions after that?"),
             ("We can launch the new store in two weeks.", "Can we launch the new store in two weeks?"),
+            // Reuses the question with other forms of its words.
+            ("I could build the new store in about three weeks, and then the subscription setup after that.", "Could you build the new store in two weeks and then set up the subscriptions after that?"),
+            ("So the main thing is that checkout fails for international customers when they're paying with PayPal, right?", "So the main thing is the checkout keeps failing for international customers when they pay with PayPal."),
+            ("Yeah so building the new store takes two weeks and then setting up subscriptions comes after that.", "Could you build the new store in two weeks and then set up the subscriptions after that?"),
             // Back and forth.
             ("Sure, we usually start with a discovery call, then a design phase of two weeks, and then the build.", "What does your process look like for a new store, and how long does the design phase take? We want to start soon."),
             ("That makes sense. For the subscriptions we would use the WooCommerce Subscriptions plugin and set up the renewals in Stripe.", "Okay, and for the subscriptions, would you use a plugin or build something custom? We also use Stripe for renewals at the moment."),
@@ -129,6 +136,11 @@ final class EchoFilterTests: XCTestCase {
         for (answer, question) in cases {
             XCTAssertNil(EchoFilter.removingEcho(from: answer, reference: question), answer)
         }
+    }
+
+    func testEchoAfterARestatementIsStillFound() {
+        let restated = "So the weekend attacks killed 14 people and injured hundreds, that is awful."
+        XCTAssertEqual(EchoFilter.removingEcho(from: restated + " " + Bleed.echo, reference: Bleed.them), restated)
     }
 
     func testWorkIsBounded() {

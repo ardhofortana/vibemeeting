@@ -248,7 +248,7 @@ final class TranscriptStoreTests: XCTestCase {
         // Past the window for near-verbatim copies, within the one for garbled echo.
         store.apply(.init(speaker: .them, kind: .final, text: Bleed.themNext), at: at(7))
         XCTAssertEqual(store.turns.map(\.speaker), [.them])
-        XCTAssertEqual(store.droppedEchoSegments, 2)
+        XCTAssertEqual(store.droppedEchoSegments, 1, "one segment, counted once")
     }
 
     func testThemRepeatingTheUsersLongLineKeepsIt() {
@@ -263,10 +263,37 @@ final class TranscriptStoreTests: XCTestCase {
         var store = TranscriptStore()
         let request = "We're looking for someone to rebuild our WooCommerce store, migrate the products, and set up subscriptions for our coffee club."
         let readBack = "Got it, so a rebuild of the WooCommerce store, product migration, and subscriptions for the coffee club. We've done that a lot."
-        XCTAssertNotNil(EchoFilter.removingEcho(from: readBack, reference: request), "looks garbled on its own")
         store.apply(.init(speaker: .them, kind: .final, text: request), at: at(0))
         store.apply(.init(speaker: .you, kind: .final, text: readBack), at: at(7))
         XCTAssertEqual(store.turns.map(\.text), [request, readBack])
+    }
+
+    func testQuickAnswerReusingTheQuestionIsKept() {
+        var store = TranscriptStore()
+        let question = "Could you build the new store in two weeks and then set up the subscriptions after that?"
+        let answer = "I could build the new store in about three weeks, and then the subscription setup after that."
+        store.apply(.init(speaker: .them, kind: .final, text: question), at: at(4))
+        store.apply(.init(speaker: .you, kind: .final, text: answer), at: at(6.4))
+        XCTAssertEqual(store.turns.map(\.text), [question, answer])
+        XCTAssertEqual(store.droppedEchoSegments, 0)
+    }
+
+    func testThemRepeatingAQuickAnswerKeepsIt() {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .them, kind: .final, text: "What do you need from us to get started?"), at: at(0))
+        store.apply(.init(speaker: .you, kind: .final, text: "We'll need the product photos and the shipping rates for the new store by Friday, ideally."), at: at(2))
+        store.apply(.init(speaker: .them, kind: .final, text: "Okay, so you'll need the product photo and the shipping rate for the new store by Friday."), at: at(5))
+        XCTAssertEqual(store.turns.map(\.speaker), [.them, .you, .them])
+        XCTAssertEqual(store.droppedEchoSegments, 0)
+    }
+
+    func testThemStartingToRepeatTheUsersLineKeepsIt() {
+        var store = TranscriptStore()
+        store.apply(.init(speaker: .you, kind: .final, text: "We can launch in two weeks."), at: at(0))
+        store.apply(.init(speaker: .them, kind: .volatile, text: "Okay so you can launch in two weeks"), at: at(1.8))
+        store.apply(.init(speaker: .them, kind: .final, text: "Okay so you can launch in two weeks."), at: at(3.2))
+        XCTAssertEqual(store.turns.map(\.speaker), [.you, .them])
+        XCTAssertEqual(store.droppedEchoSegments, 0)
     }
 
     func testOwnWordsHeldBackLiveShowOnceFinal() {

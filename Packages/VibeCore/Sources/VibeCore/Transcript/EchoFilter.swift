@@ -162,13 +162,15 @@ public enum EchoFilter {
     }
 
     enum Relation: Equatable {
-        case same, similar, different
+        /// Another form of the same word ("subscriptions", "subscription"): an
+        /// answer reusing their words does this, so it's weaker evidence of echo.
+        case same, similar, inflected, different
     }
 
-    /// How a candidate word relates to a reference word: the same word, a likely
-    /// mishearing of it (close in spelling, sound or stem: "healthies" for
-    /// "Halbies", "women's" for "Yemen's", "reporter" for "reporting", "tax" for
-    /// "attacks"), or different. Function words and numbers must be the same.
+    /// How a candidate word relates to a reference word: the same word, another
+    /// form of it ("reporter" for "reporting"), a likely mishearing of it (close in
+    /// spelling or sound: "healthies" for "Halbies", "women's" for "Yemen's", "tax"
+    /// for "attacks"), or different. Function words and numbers must be the same.
     static func relation(_ a: String, _ b: String) -> Relation {
         relation(WordForm(a), WordForm(b))
     }
@@ -176,6 +178,7 @@ public enum EchoFilter {
     fileprivate static func relation(_ a: WordForm, _ b: WordForm) -> Relation {
         if a.key == b.key { return .same }
         guard let x = a.letters, let y = b.letters else { return .different }
+        if a.stem == b.stem || a.key.hasPrefix(b.key) || b.key.hasPrefix(a.key) { return .inflected }
         if x.count >= 4, y.count >= 4 {
             let allowed = max(1, Int(0.34 * Double(max(x.count, y.count))))
             if abs(x.count - y.count) <= allowed, editDistance(x, y, limit: allowed) <= allowed {
@@ -183,7 +186,6 @@ public enum EchoFilter {
             }
         }
         if a.sound.count >= 3, a.sound == b.sound { return .similar }
-        if a.stem.count >= 4, a.stem == b.stem { return .similar }
         return .different
     }
 
@@ -381,8 +383,11 @@ private struct Aligner {
     /// Word ranges of the candidate that are echo, in order.
     func echoRuns(in range: Range<Int>, depth: Int = 0) -> [ClosedRange<Int>] {
         guard range.count >= run.minWords, depth < 4 else { return [] }
-        let found = pieces(of: bestAlignment(in: range)).compactMap(echoedWords)
-        guard let first = found.first, let last = found.last else { return [] }
+        let aligned = pieces(of: bestAlignment(in: range))
+        let found = aligned.compactMap(echoedWords)
+        // When the best match isn't echo (a clean restatement), echo may still sit on either side of it.
+        let spans = found.isEmpty ? aligned.compactMap(matchedSpan) : found
+        guard let first = spans.first, let last = spans.last else { return [] }
         return echoRuns(in: range.lowerBound..<first.lowerBound, depth: depth + 1)
             + found
             + echoRuns(in: (last.upperBound + 1)..<range.upperBound, depth: depth + 1)
@@ -395,7 +400,7 @@ private struct Aligner {
     private func weight(_ relation: EchoFilter.Relation, word: Int) -> Double {
         switch relation {
         case .same: return isFunctionWord[word] ? EchoFilter.Weight.sameFunction : EchoFilter.Weight.sameContent
-        case .similar: return EchoFilter.Weight.similar
+        case .similar, .inflected: return EchoFilter.Weight.similar
         case .different: return EchoFilter.Weight.different
         }
     }
@@ -461,10 +466,17 @@ private struct Aligner {
         return pieces
     }
 
+    /// The candidate words from a piece's first match to its last.
+    private func matchedSpan(_ piece: ArraySlice<Step>) -> ClosedRange<Int>? {
+        let matched = piece.compactMap(\.match)
+        guard let first = matched.first, let last = matched.last else { return nil }
+        return first...last
+    }
+
     /// The candidate words a piece covers, when it reads as echo.
     private func echoedWords(_ piece: ArraySlice<Step>) -> ClosedRange<Int>? {
         var matched: [Int] = []
-        var anchors = 0, misheard = 0, substituted = 0
+        var anchors = 0, misheard = 0, inflected = 0, substituted = 0
         for case .paired(let word, let relation) in piece {
             switch relation {
             case .same:
@@ -473,6 +485,9 @@ private struct Aligner {
             case .similar:
                 matched.append(word)
                 misheard += 1
+            case .inflected:
+                matched.append(word)
+                inflected += 1
             case .different:
                 if !isFunctionWord[word] { substituted += 1 }
             }
@@ -487,7 +502,10 @@ private struct Aligner {
               Double(matchedContent) >= run.minContentShare * Double(content.count)
         else { return nil }
         if let minWordsWithOneSlip = run.minWordsWithOneSlip {
-            guard misheard >= 1, misheard + substituted >= 2 || length >= minWordsWithOneSlip else { return nil }
+            // A real mishearing; or, in a long run with many exact anchors, other word forms.
+            let misheardRun = misheard >= 1 && (misheard + substituted >= 2 || length >= minWordsWithOneSlip)
+            let longInflectedRun = inflected >= 1 && length >= minWordsWithOneSlip && anchors >= 7
+            guard misheardRun || longInflectedRun else { return nil }
         }
         return first...last
     }
