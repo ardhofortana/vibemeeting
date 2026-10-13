@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 
 /// Opens and reuses the app's regular windows. VibeMeeting lives in the menu
@@ -14,19 +15,19 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
 
     func showMain() {
-        show(id: "main", title: "VibeMeeting", size: CGSize(width: 980, height: 640), minSize: CGSize(width: 760, height: 480)) {
+        show(id: "main", title: "VibeMeeting", size: CGSize(width: 980, height: 680), minSize: CGSize(width: 760, height: 500), glass: true) {
             MainWindowView()
         }
     }
 
     func showNewMeeting() {
-        show(id: "new-meeting", title: "New meeting", size: CGSize(width: 560, height: 640), minSize: CGSize(width: 480, height: 520)) {
+        show(id: "new-meeting", title: "New meeting", size: CGSize(width: 640, height: 820), minSize: CGSize(width: 520, height: 560), glass: true) {
             NewMeetingView()
         }
     }
 
     func showAddContext() {
-        show(id: "add-context", title: "Meeting context", size: CGSize(width: 520, height: 520), minSize: CGSize(width: 440, height: 400)) {
+        show(id: "add-context", title: "Meeting context", size: CGSize(width: 560, height: 600), minSize: CGSize(width: 460, height: 440), glass: true) {
             AddContextView()
         }
     }
@@ -58,6 +59,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
         title: String,
         size: CGSize,
         minSize: CGSize,
+        glass: Bool = false,
         @ViewBuilder content: () -> Content
     ) {
         NSApp.setActivationPolicy(.regular)
@@ -66,10 +68,21 @@ final class WindowManager: NSObject, NSWindowDelegate {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let controller = NSHostingController(rootView: content().environment(app).tint(Brand.accent))
+        let chrome = WindowChromeModel()
+        let controller = NSHostingController(rootView: GlassRoot(chrome: chrome, content: content()).environment(app).tint(Brand.accent))
         let window = NSWindow(contentViewController: controller)
         window.title = title
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+        if glass {
+            // Dark glass: the SwiftUI view draws the whole window, title row included,
+            // under a transparent title bar; the system buttons stay where they are.
+            window.styleMask.insert(.fullSizeContentView)
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        }
         window.setContentSize(size)
         window.contentMinSize = minSize
         window.isReleasedWhenClosed = false
@@ -80,6 +93,9 @@ final class WindowManager: NSObject, NSWindowDelegate {
         }
         window.setFrameAutosaveName(id)
         windows[id] = window
+        if glass {
+            chrome.update(from: window)
+        }
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -93,5 +109,32 @@ final class WindowManager: NSObject, NSWindowDelegate {
                 NSApp.setActivationPolicy(.accessory)
             }
         }
+    }
+}
+
+/// Measures where a glass window's title bar and buttons are, for `WindowTitleBar`.
+@MainActor
+@Observable
+final class WindowChromeModel {
+    var value = WindowChrome()
+
+    func update(from window: NSWindow) {
+        guard let contentView = window.contentView else { return }
+        let titleBarHeight = contentView.bounds.height - window.contentLayoutRect.height
+        var inset = value.leadingInset
+        if let zoom = window.standardWindowButton(.zoomButton), zoom.superview != nil {
+            inset = zoom.convert(zoom.bounds, to: nil).maxX + 14
+        }
+        value = WindowChrome(titleBarHeight: max(titleBarHeight, 28), leadingInset: inset)
+    }
+}
+
+/// Hands the measured title bar geometry to the window's SwiftUI content.
+private struct GlassRoot<Content: View>: View {
+    let chrome: WindowChromeModel
+    let content: Content
+
+    var body: some View {
+        content.environment(\.windowChrome, chrome.value)
     }
 }
