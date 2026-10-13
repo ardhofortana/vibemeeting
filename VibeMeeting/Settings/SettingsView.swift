@@ -174,13 +174,14 @@ private struct ModelPicker: View {
 
 private struct ProfileSettings: View {
     @Environment(AppModel.self) private var app
+    @State private var confirmingClear = false
 
     var body: some View {
         @Bindable var settings = app.settings
         VStack(alignment: .leading, spacing: 8) {
             Text("About me")
                 .font(.headline)
-            Text("Sent with every reply: who you are, your brand, stack, portfolio, and your rules for scope and pricing. Numbers in replies only ever come from here or the meeting context.")
+            Text("Sent with every reply and recap: who you are, what you do, how you want to come across, and facts replies may use. Write it in any language. Numbers in replies only come from here, your meeting setup or what was said in the call.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -188,6 +189,16 @@ private struct ProfileSettings: View {
                 .font(.body.monospaced())
                 .scrollContentBackground(.hidden)
                 .padding(6)
+                .overlay(alignment: .topLeading) {
+                    if settings.aboutMe.isEmpty {
+                        Text(Prompts.aboutMePlaceholder)
+                            .font(.body.monospaced())
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 6)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             HStack {
@@ -195,8 +206,15 @@ private struct ProfileSettings: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Reset to template") { settings.aboutMe = Prompts.aboutMeTemplate }
+                Button("Clear") { confirmingClear = true }
                     .controlSize(.small)
+                    .disabled(settings.aboutMe.isEmpty)
+                    .confirmationDialog("Clear About me?", isPresented: $confirmingClear) {
+                        Button("Clear", role: .destructive) { settings.aboutMe = "" }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Everything you wrote here is removed.")
+                    }
             }
         }
     }

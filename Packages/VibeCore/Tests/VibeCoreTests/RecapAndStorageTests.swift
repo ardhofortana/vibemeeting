@@ -61,7 +61,7 @@ final class RecapTests: XCTestCase {
     }
 
     func testRecapRequestUsesSchemaAndFallbackOnOpus() throws {
-        let request = RecapPromptBuilder(model: .opus55).recapRequest(record: record(), aboutMe: "Ardho")
+        let request = RecapPromptBuilder(model: .opus55).recapRequest(record: record(), aboutMe: "Sam Rivera")
         XCTAssertEqual(request.fallbacks, "default")
         XCTAssertEqual(request.betas, ["server-side-fallback-2026-07-01"])
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: request.encoded()) as? [String: Any])
@@ -107,7 +107,7 @@ final class RecapTests: XCTestCase {
             #"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":120}}"#,
         ]
         let generator = RecapGenerator(client: ClaudeClient(apiKey: "sk", transport: transport), builder: RecapPromptBuilder(model: .opus55))
-        let result = try await generator.generate(record: record(), aboutMe: "Ardho")
+        let result = try await generator.generate(record: record(), aboutMe: "Sam Rivera")
         XCTAssertEqual(result.recap.decisions, ["Two milestones"])
         XCTAssertEqual(result.usage.outputTokens, 120)
     }

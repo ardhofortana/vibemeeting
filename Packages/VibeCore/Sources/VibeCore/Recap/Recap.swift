@@ -81,7 +81,7 @@ public struct Recap: Codable, Equatable, Sendable {
                 "description": "Three to five sentences on what the meeting covered and where it landed.",
             ]),
             "key_points": stringArray("Important facts, numbers, and requirements that came up."),
-            "decisions": stringArray("Things both sides agreed on. Empty if nothing was decided."),
+            "decisions": stringArray("Things that were agreed on in the meeting. Empty if nothing was decided."),
             "action_items": .object([
                 "type": "array",
                 "items": .object([

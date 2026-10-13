@@ -2,7 +2,7 @@
 
 Asisten meeting pribadi untuk macOS. VibeMeeting mendengarkan lawan bicara di app call mana pun (Zoom, Meet, Teams, Slack, WhatsApp) tanpa bot, menampilkan subtitle live, dan menyiapkan script jawaban siap baca saat kamu menekan **⌥Space**. Setelah meeting selesai, app membuat rekap berisi ringkasan, poin penting, keputusan, action items, dan pertanyaan terbuka.
 
-Spesifikasi lengkap ada di [`docs/PRD.md`](docs/PRD.md).
+Ringkasan produk ada di [`docs/PRD.md`](docs/PRD.md). Spesifikasi v1 yang lama (saat VibeMeeting masih tool pribadi) diarsipkan di [`docs/archive/PRD-v1.md`](docs/archive/PRD-v1.md).
 
 > **Status:** kode v1 lengkap (F1–F8). Paket inti `VibeCore` sudah dites (62 unit test). Lapisan app macOS dikompilasi di CI dan **belum diuji di Mac sungguhan**, jadi jalankan dulu checklist M0 di bawah.
 
@@ -42,7 +42,7 @@ Saat pertama kali dibuka, jendela Welcome memandu tiga hal:
 
 1. **Allow audio capture.** macOS akan meminta izin mikrofon dan izin rekam audio sistem, lalu model speech bahasa Inggris on-device diunduh.
 2. **API key Claude.** Key disimpan di Keychain.
-3. **About me.** Template sudah terisi (Detheme, sejak 2013, stack WordPress dan sebagainya). Lengkapi link portfolio, link booking, milestone, dan aturan harga di Settings → About me.
+3. **About me.** Kosong di awal. Settings → About me menampilkan outline yang perlu diisi: nama, pekerjaanmu, siapa yang biasa kamu temui, kesan yang ingin kamu berikan, fakta yang boleh dipakai di jawaban, dan hal yang tidak pernah kamu katakan. Boleh ditulis dalam bahasa apa pun.
 
 ## Cara pakai
 
@@ -63,12 +63,12 @@ Hotkey (bisa diubah di Settings → Hotkeys, dan hanya aktif selama meeting berj
 | Regenerate / Shorter | ⌥R / ⌥S |
 | Show/hide overlay | ⌥H |
 
-## Checklist M0 (jalankan di Mac sebelum dipakai di meeting klien)
+## Checklist M0 (jalankan di Mac sebelum dipakai di meeting sungguhan)
 
-PRD menetapkan M0 sebagai spike untuk bagian paling berisiko. Kodenya sudah ada; yang tersisa adalah validasi di hardware sungguhan.
+PRD v1 menetapkan M0 sebagai spike untuk bagian paling berisiko. Kodenya sudah ada; yang tersisa adalah validasi di hardware sungguhan.
 
 1. **Tes inti:** `swift test --package-path Packages/VibeCore`
-2. **Latensi Reply:** jalankan enam skenario PRD terhadap API sungguhan:
+2. **Latensi Reply:** jalankan skenario contoh (termasuk satu percobaan prompt injection) terhadap API sungguhan:
    ```bash
    cd Packages/VibeCore
    ANTHROPIC_API_KEY=sk-ant-... swift run vibe-latency --model claude-haiku-5-5 --model claude-opus-5-5

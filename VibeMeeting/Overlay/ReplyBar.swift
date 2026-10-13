@@ -109,7 +109,7 @@ struct ReplyBar: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Brand.gradient(startPoint: .topLeading, endPoint: .bottomTrailing))
-            TextField("Steer the reply (optional), e.g. offer 2 revisions", text: $session.steerText)
+            TextField("Steer the reply (optional), e.g. agree, but ask for a week", text: $session.steerText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .focused($steerFocused)

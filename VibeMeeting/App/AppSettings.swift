@@ -62,7 +62,8 @@ final class AppSettings {
         self.defaults = defaults
         replyModelID = defaults.string(forKey: Key.replyModel) ?? ClaudeModel.defaultReplyModelID
         recapModelID = defaults.string(forKey: Key.recapModel) ?? ClaudeModel.defaultRecapModelID
-        aboutMe = defaults.string(forKey: Key.aboutMe) ?? Prompts.aboutMeTemplate
+        // Empty until the user writes it; Settings shows an outline as placeholder.
+        aboutMe = defaults.string(forKey: Key.aboutMe) ?? ""
         if let data = defaults.data(forKey: Key.customPresets),
            let presets = try? JSONDecoder().decode([StylePreset].self, from: data) {
             customPresets = presets

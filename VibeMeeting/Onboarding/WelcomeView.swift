@@ -62,11 +62,11 @@ struct WelcomeView: View {
             }
 
             step(number: 3, title: "About me") {
-                Text("Your brand, stack and pricing rules go into every reply. A template is filled in; you can finish it in Settings.")
+                Text("A few lines about who you are and what you do, so replies sound like you. It starts empty; an outline shows what to write, in any language.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Edit About me") { app.windows.showSettings() }
+                Button("Edit About me") { app.windows.showSettings(tab: .aboutMe) }
                     .controlSize(.small)
             }
 

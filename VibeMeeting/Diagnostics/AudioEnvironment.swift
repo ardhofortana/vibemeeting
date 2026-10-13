@@ -8,7 +8,7 @@ import Speech
 ///
 /// macOS has no public API to check or request it, and a tap without permission
 /// silently delivers zeros. Like other capture tools, this asks the private TCC
-/// framework; it's fine for a personal tool outside the App Store.
+/// framework; that works for an app distributed outside the App Store.
 enum SystemAudioPermission {
     enum Status: String {
         case authorized = "authorized"
@@ -108,8 +108,16 @@ enum AudioEnvironment {
 
         lines.append("speech transcriber available: \(SpeechTranscriber.isAvailable)")
         let supported = await SpeechTranscriber.supportedLocales
-        let hasIndonesian = supported.contains { $0.language.languageCode?.identifier == "id" }
-        lines.append("speech supported locales: \(supported.count) (Indonesian: \(hasIndonesian ? "yes" : "no"))")
+        lines.append("speech supported locales: \(supported.count)")
+        // Which of the user's languages the speech service can transcribe.
+        let speechLanguages = Set(supported.compactMap { $0.language.languageCode?.identifier })
+        let preferred = Locale.preferredLanguages.map { identifier in
+            let code = Locale(identifier: identifier).language.languageCode?.identifier
+            let transcribable = code.map { speechLanguages.contains($0) } ?? false
+            return "\(identifier) (speech: \(transcribable ? "yes" : "no"))"
+        }
+        lines.append("current locale: \(Locale.current.identifier)")
+        lines.append("preferred languages: \(preferred.isEmpty ? "none" : preferred.joined(separator: ", "))")
         let installed = await SpeechTranscriber.installedLocales.map { $0.identifier }.sorted()
         lines.append("speech installed locales: \(installed.isEmpty ? "none" : installed.joined(separator: ", "))")
         let reserved = await AssetInventory.reservedLocales.map { $0.identifier }.sorted()

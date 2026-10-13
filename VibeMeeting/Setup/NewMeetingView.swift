@@ -95,7 +95,7 @@ struct NewMeetingView: View {
         VStack(alignment: .leading, spacing: 10) {
             GlassSectionHeader(title: "Goal", systemImage: "target")
             TextField(
-                "What do you want from this call? e.g. Agree on the scope of milestone 1 and get a go-ahead for the proposal.",
+                "What do you want from this call? e.g. Leave with a clear plan and agreed next steps.",
                 text: $goal,
                 axis: .vertical
             )
@@ -184,7 +184,7 @@ struct NewMeetingView: View {
                     .foregroundStyle(Brand.gradient(startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 20)
                 TextField(
-                    "Anything specific for this call? e.g. Keep pricing vague until scope is clear.",
+                    "Anything specific for this call? e.g. Keep it brief and don't commit to dates yet.",
                     text: $instructions,
                     axis: .vertical
                 )

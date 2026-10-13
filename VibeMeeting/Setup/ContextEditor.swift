@@ -45,7 +45,7 @@ struct ContextEditor: View {
                 .font(.system(size: 24, weight: .light))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 2)
-            Text("Drop files or paste notes, chats, proposals, briefs")
+            Text("Drop files or paste notes, agendas, chats, documents")
                 .font(.system(size: 14))
                 .multilineTextAlignment(.center)
             Text("PDF, DOCX, TXT, MD, or images (max \(ContextImporter.maxFileSizeText) each)")
@@ -115,7 +115,7 @@ struct ContextEditor: View {
                 .background(Color.black.opacity(0.18))
                 .overlay(alignment: .topLeading) {
                     if notes.isEmpty {
-                        Text("Paste chats, proposals or notes here…")
+                        Text("Paste notes, an agenda or a chat here…")
                             .font(.system(size: 14))
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 15)

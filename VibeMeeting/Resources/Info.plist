@@ -31,6 +31,6 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>VibeMeeting transcribes your side of the call on this Mac so replies fit the conversation. Audio is never saved or sent.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Personal tool by Ardho Fortana.</string>
+	<string>© 2026 Djavaweb</string>
 </dict>
 </plist>

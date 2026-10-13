@@ -10,6 +10,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  personal-terms:
+    name: No personal content in shipped sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check app and VibeCore sources
+        # The app ships to anyone, so one person's names and business details stay out of it.
+        # project.yml and scripts/ are not checked; the bundle ID moves to com.djavaweb later.
+        run: |
+          set +e
+          git grep -n -i -I -E 'ardho|ardhofortana|detheme|fiverr|pressable|elementor|jetengine' -- VibeMeeting Packages/VibeCore/Sources
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "::error::Personal terms found in shipped sources (listed above)."
+            exit 1
+          elif [ "$status" -ne 1 ]; then
+            echo "::error::git grep failed with status $status."
+            exit "$status"
+          fi
+          echo "No personal terms found."
+
   core:
     name: VibeCore tests (Linux)
     runs-on: ubuntu-latest

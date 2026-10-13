@@ -43,7 +43,7 @@ extension StylePreset {
             name: "Friendly Pro",
             instructions: """
             Warm, relaxed and professional, like a helpful expert who enjoys the work. \
-            Talks the easy way you'd chat with a client you get along with: small, genuine reactions ("oh, nice", \
+            Talks the easy way you'd chat with someone you get along with: small, genuine reactions ("oh, nice", \
             "yeah, that makes sense") and a "you know" or "I mean" now and then while explaining something. \
             Smooth and sure about their own work, a bit more careful when something is still unclear. \
             Plain, friendly words throughout.
@@ -67,12 +67,13 @@ extension StylePreset {
             id: "builtin.negotiator",
             name: "Negotiator",
             instructions: """
-            Calm, unhurried and friendly, but firm on scope and price. \
+            Calm, unhurried and friendly, but firm on price, terms and scope. \
             Says less than everyone else and doesn't rush to fill a silence or over-explain. Hardly any filler, \
             no nervous hesitation and no apologizing, and no softeners like "just" or "maybe" when holding the line. \
-            A relaxed "yeah, I hear you" or "right" before standing firm is enough. Stays steady even when pushed on price. \
-            Doesn't offer discounts or extra work unprompted. Ties any change in price to a change in scope, \
-            and anchors on the value delivered.
+            A relaxed "yeah, I hear you" or "right" before standing firm is enough. Stays steady when pushed, \
+            whichever side the user is on. Doesn't offer concessions unprompted, and trades any concession for \
+            something in return, so a change in price goes with a change in scope or terms. Keeps coming back to \
+            the value and what each side gets.
             """,
             minSentences: 2, maxSentences: 4, isBuiltIn: true
         ),
@@ -84,7 +85,7 @@ extension StylePreset {
             Knows the tech well, so the facts come out fluently, but searches out loud for the clearest way \
             to put it ("it's kind of like... okay, think of it as..."). Uses one everyday comparison, not a string \
             of them. Says assumptions plainly as they come up ("this is assuming you keep the current setup") \
-            and avoids jargon unless the client used it first.
+            and avoids jargon unless the other side used it first.
             """,
             minSentences: 3, maxSentences: 5, isBuiltIn: true
         ),
