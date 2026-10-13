@@ -236,3 +236,10 @@ Notes:
 ## Comparing speech engines
 
 `scripts/asr-compare.sh "<YouTube URL>" [minutes]` transcribes the first minutes of a video with human-made English subtitles twice, with Apple's on-device engine (via [yap](https://github.com/finnvoor/yap)) and with NVIDIA Parakeet TDT 0.6B v3 (via [parakeet-mlx](https://github.com/senstella/parakeet-mlx)), and prints each one's word error rate against the subtitles. It installs its tools with Homebrew and uv and works in `~/Desktop/asr-test/<video id>`; the app is not involved.
+
+To score the app itself, copy a meeting's transcript (Transcript → Copy transcript, then `pbpaste > app.txt`):
+
+- `scripts/asr-compare.sh --score <video id> app.txt` scores the Them lines of a meeting that played the same video, next to the two engines.
+- `scripts/asr-compare.sh --against reference.txt app.txt [them|you]` scores the Them (or You) lines against any text known to be what was said, such as a voice assistant's replies copied from its chat, or a passage read aloud into the mic (`scripts/asr-passage.txt` is one, with numbers kept small so number formatting doesn't count as errors).
+
+`'d` and `'s` after a pronoun match either full form, so "I'd" against "I had" is not counted as an error.

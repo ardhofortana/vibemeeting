@@ -5,10 +5,15 @@
 #
 #   scripts/asr-compare.sh "https://www.youtube.com/watch?v=..." [minutes]
 #   scripts/asr-compare.sh --score <video id> <transcript file>
+#   scripts/asr-compare.sh --against <reference text file> <transcript file> [them|you]
 #
 # The second form scores another transcript of the same audio, e.g. one
 # copied from VibeMeeting (Transcript → Copy transcript, Them lines only),
 # next to Apple and Parakeet, against the reference saved by the first run.
+# The third scores a transcript copied from VibeMeeting against any text known
+# to be what was said, e.g. a voice assistant's replies as its chat shows them
+# (Them lines) or a passage read aloud into the mic (you), such as
+# scripts/asr-passage.txt.
 #
 # Installs what it needs with Homebrew (yt-dlp, ffmpeg, uv, yap) and uv
 # (parakeet-mlx), downloads the audio and subtitles into
@@ -26,6 +31,13 @@ if [ "${1:-}" = "--score" ]; then
     case "$file" in /*) ;; *) file="$PWD/$file" ;; esac
     cd "$dir"
     python3 "$here/asr_score.py" --reference reference.txt Apple=apple.txt "Parakeet v3=parakeet.txt" "This file=$file"
+    exit 0
+fi
+
+if [ "${1:-}" = "--against" ]; then
+    reference="${2:?reference text file}"
+    file="${3:?transcript file}"
+    python3 "$here/asr_score.py" --reference "$reference" --speaker "${4:-them}" "This file=$file"
     exit 0
 fi
 

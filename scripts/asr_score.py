@@ -1,13 +1,15 @@
 """Word error rate of transcripts against a reference, for scripts/asr-compare.sh.
 
     python3 asr_score.py --vtt ref.en.vtt --seconds 300 Apple=apple.txt:6 Parakeet=parakeet.txt:125
-    python3 asr_score.py --reference reference.txt App=app.txt
+    python3 asr_score.py --reference reference.txt --speaker you App=app.txt
 
 With --vtt the reference is built from the subtitle cues that start in the
 first --seconds and saved as reference.txt. A transcript copied from
-VibeMeeting ("[00:12] Them: …" lines) is scored on the Them lines only.
-Spelling that isn't a recognition error is evened out on both sides first:
-contractions, small numbers written as words, "7,000", okay/ok, British -ise.
+VibeMeeting ("[00:12] Them: …" lines) is scored on one speaker's lines,
+Them unless --speaker says otherwise. Spelling that isn't a recognition error
+is evened out on both sides first: contractions, small numbers written as
+words, "7,000", okay/ok, British -ise. 'd and 's after a pronoun match either
+full form ("I'd" is "I had" or "I would"), since the audio can't tell them apart.
 """
 import argparse
 import html
@@ -15,16 +17,20 @@ import re
 
 CONTRACTIONS = {
     "i'm": "i am", "you're": "you are", "we're": "we are", "they're": "they are",
-    "it's": "it is", "that's": "that is", "there's": "there is", "what's": "what is",
-    "here's": "here is", "he's": "he is", "she's": "she is", "let's": "let us",
+    "let's": "let us",
     "i've": "i have", "we've": "we have", "you've": "you have", "they've": "they have",
     "i'll": "i will", "we'll": "we will", "you'll": "you will", "they'll": "they will",
-    "it'll": "it will", "i'd": "i would", "we'd": "we would", "you'd": "you would",
-    "they'd": "they would", "don't": "do not", "doesn't": "does not", "didn't": "did not",
+    "it'll": "it will", "don't": "do not", "doesn't": "does not", "didn't": "did not",
     "can't": "can not", "cannot": "can not", "won't": "will not", "isn't": "is not",
     "aren't": "are not", "wasn't": "was not", "weren't": "were not", "haven't": "have not",
     "hasn't": "has not", "wouldn't": "would not", "shouldn't": "should not",
     "couldn't": "could not", "gonna": "going to", "wanna": "want to", "ok": "okay",
+}
+# 'd is had or would, 's is is or has: after these words both full forms and
+# the contraction become one token.
+AMBIGUOUS = {
+    "'d": ({"had", "would"}, {"i", "you", "he", "she", "it", "we", "they", "that", "there", "who", "what"}),
+    "'s": ({"is", "has"}, {"he", "she", "it", "that", "there", "what", "here", "who", "where", "how"}),
 }
 NUMBERS = {
     "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
@@ -59,12 +65,12 @@ def reference_from_vtt(path, seconds):
     return " ".join(lines)
 
 
-def transcript_text(path):
-    """Plain text, or the Them lines of a transcript copied from VibeMeeting."""
+def transcript_text(path, speaker="them"):
+    """Plain text, or one speaker's lines of a transcript copied from VibeMeeting."""
     text = open(path, encoding="utf-8").read()
     turns = re.findall(r"^\[[\d:]+\]\s*([^:\n]+):\s*(.*)$", text, flags=re.MULTILINE)
     if turns:
-        return " ".join(words for speaker, words in turns if speaker.strip().lower() == "them")
+        return " ".join(words for name, words in turns if speaker == "all" or name.strip().lower() == speaker)
     return text
 
 
@@ -79,9 +85,18 @@ def words(text):
         if not word:
             continue
         word = CONTRACTIONS.get(word, word)
+        for suffix, (_, before) in AMBIGUOUS.items():
+            if word.endswith(suffix) and word[:-2] in before:
+                word = f"{word[:-2]} {suffix}"
         for part in word.split():
+            if part not in AMBIGUOUS:
+                part = part.replace("'", "")  # John's and Johns alike
             part = NUMBERS.get(part, part)
             part = re.sub(r"isation$", "ization", re.sub(r"ise$", "ize", part)) if len(part) > 5 else part
+            if result:
+                for suffix, (full, before) in AMBIGUOUS.items():
+                    if part in full and result[-1] in before:
+                        part = suffix
             result.append(part)
     return result
 
@@ -119,6 +134,8 @@ def main():
     parser.add_argument("--vtt")
     parser.add_argument("--seconds", type=float, default=300)
     parser.add_argument("--reference")
+    parser.add_argument("--speaker", choices=["them", "you", "all"], default="them",
+                        help="whose lines to score in a transcript copied from VibeMeeting")
     parser.add_argument("transcripts", nargs="+", help="Name=path[:seconds taken]")
     args = parser.parse_args()
 
@@ -132,7 +149,7 @@ def main():
     for item in args.transcripts:
         name, _, rest = item.partition("=")
         path, _, took = rest.partition(":")
-        hyp = words(transcript_text(path))
+        hyp = words(transcript_text(path, args.speaker))
         errors, subs, dels, ins, pairs = align(ref, hyp)
         wer = errors / max(1, len(ref))
         timing = f"  [{took} s]" if took else ""
@@ -140,7 +157,8 @@ def main():
               f"substituted {subs}, missed {dels}, extra {ins}{timing}")
         shown = ", ".join(f"{r}→{h}" for r, h in pairs[:20])
         print(f"{'':12} mix-ups: {shown or 'none'}\n")
-    print("Subtitles are sometimes lightly edited, which raises every WER alike; compare the numbers with each other.")
+    print("A reference that was lightly edited (subtitles often are) raises every WER alike; "
+          "compare the numbers with each other.")
 
 
 if __name__ == "__main__":
