@@ -33,7 +33,8 @@ extension EnvironmentValues {
     @Entry var windowChrome = WindowChrome()
 }
 
-/// Blurred desktop behind the window with the navy tint on top.
+/// Blurred desktop behind the window with the navy tint on top. Glass windows
+/// get it from `WindowManager`; views don't add it themselves.
 struct GlassBackground: View {
     var body: some View {
         ZStack {

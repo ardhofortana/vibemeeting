@@ -69,7 +69,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
             return
         }
         let chrome = WindowChromeModel()
-        let controller = NSHostingController(rootView: GlassRoot(chrome: chrome, content: content()).environment(app).tint(Brand.accent))
+        let controller = NSHostingController(rootView: GlassRoot(chrome: chrome, glass: glass, content: content()).environment(app).tint(Brand.accent))
         let window = NSWindow(contentViewController: controller)
         window.title = title
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -129,12 +129,19 @@ final class WindowChromeModel {
     }
 }
 
-/// Hands the measured title bar geometry to the window's SwiftUI content.
+/// Puts a glass window's content on the glass and hands it the measured title bar geometry.
 private struct GlassRoot<Content: View>: View {
     let chrome: WindowChromeModel
+    let glass: Bool
     let content: Content
 
     var body: some View {
-        content.environment(\.windowChrome, chrome.value)
+        content
+            .environment(\.windowChrome, chrome.value)
+            .background {
+                if glass {
+                    GlassBackground()
+                }
+            }
     }
 }
