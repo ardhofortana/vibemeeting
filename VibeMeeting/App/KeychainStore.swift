@@ -3,7 +3,8 @@ import Security
 
 /// Generic-password Keychain items for this app.
 enum KeychainStore {
-    static let service = Bundle.main.bundleIdentifier ?? "VibeMeeting"
+    /// The bundle ID, so release and development builds keep separate items.
+    static let service = AppIdentity.bundleID
     static let apiKeyAccount = "claude-api-key"
 
     struct Failure: Error, LocalizedError {
@@ -13,7 +14,8 @@ enum KeychainStore {
         }
     }
 
-    static func read(account: String) -> String? {
+    /// `service` defaults to this build's; another one may make macOS ask the user first.
+    static func read(account: String, service: String = KeychainStore.service) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

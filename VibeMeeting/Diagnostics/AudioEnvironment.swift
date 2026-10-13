@@ -95,6 +95,7 @@ enum AudioEnvironment {
     static func report() async -> [String] {
         var lines: [String] = []
         lines.append("VibeMeeting \(AppVersion.display)")
+        lines.append("bundle ID: \(AppIdentity.bundleID)")
         lines.append("macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
         lines.append("code signing: \(CodeSigning.summary)")
         lines.append("system audio permission: \(SystemAudioPermission.status.label)")

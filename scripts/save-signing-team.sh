@@ -19,4 +19,4 @@ fi
 printf 'DEVELOPMENT_TEAM = %s\n' "$team" > Configs/Local.xcconfig
 echo "Saved Team $team to Configs/Local.xcconfig."
 echo "Next: xcodegen generate, build once, then reset the old permission so macOS asks again:"
-echo "  tccutil reset AudioCapture com.ardhofortana.VibeMeeting"
+echo "  tccutil reset AudioCapture $(scripts/bundle-id.sh debug)"

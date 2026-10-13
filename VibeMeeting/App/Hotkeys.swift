@@ -41,6 +41,9 @@ enum Hotkeys {
 
     static var names: [KeyboardShortcuts.Name] { entries.map(\.name) }
 
+    /// The UserDefaults keys KeyboardShortcuts saves these hotkeys under.
+    static var storageKeys: [String] { names.map { "KeyboardShortcuts_\($0.rawValue)" } }
+
     static func install(app: AppModel) {
         KeyboardShortcuts.onKeyDown(for: .reply) { [weak app] in app?.activeSession?.reply() }
         KeyboardShortcuts.onKeyDown(for: .answer) { [weak app] in app?.activeSession?.reply(intent: .answer) }

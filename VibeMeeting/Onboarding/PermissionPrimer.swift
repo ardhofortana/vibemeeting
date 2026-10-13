@@ -21,7 +21,7 @@ enum PermissionPrimer {
             case .authorized:
                 parts.append("System audio: allowed.")
             case .denied:
-                parts.append("System audio: not allowed. Turn on VibeMeeting under System Settings → Privacy & Security → Screen & System Audio Recording → System Audio Recording Only.")
+                parts.append("System audio: not allowed. Turn on \(AppIdentity.displayName) under System Settings → Privacy & Security → Screen & System Audio Recording → System Audio Recording Only.")
             case .unknown:
                 parts.append(systemAudio
                     ? "System audio: requested. If macOS asked, choose Allow."

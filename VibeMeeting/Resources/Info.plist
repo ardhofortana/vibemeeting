@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>VibeMeeting</string>
+	<string>$(APP_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -32,5 +32,7 @@
 	<string>VibeMeeting transcribes your side of the call on this Mac so replies fit the conversation. Audio is never saved or sent.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Djavaweb</string>
+	<key>VibeMeetingDataFolder</key>
+	<string>$(APP_DATA_FOLDER)</string>
 </dict>
 </plist>

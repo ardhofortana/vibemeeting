@@ -15,20 +15,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Check app and VibeCore sources
+      - name: Check app, VibeCore, project and script sources
         # The app ships to anyone, so one person's names and business details stay out of it.
-        # project.yml and scripts/ are not checked; the bundle ID moves to com.djavaweb later.
+        # One line may name the bundle ID from before the Djavaweb identity: the app reads
+        # it once to copy settings and the API key (VibeMeeting/App/IdentityMigration.swift).
         run: |
           set +e
-          git grep -n -i -I -E 'ardho|ardhofortana|detheme|fiverr|pressable|elementor|jetengine' -- VibeMeeting Packages/VibeCore/Sources
+          hits=$(git grep -n -i -I -E 'ardho|ardhofortana|detheme|fiverr|pressable|elementor|jetengine' -- VibeMeeting Packages/VibeCore/Sources project.yml scripts Configs)
           status=$?
           set -e
-          if [ "$status" -eq 0 ]; then
-            echo "::error::Personal terms found in shipped sources (listed above)."
-            exit 1
-          elif [ "$status" -ne 1 ]; then
+          if [ "$status" -gt 1 ]; then
             echo "::error::git grep failed with status $status."
             exit "$status"
+          fi
+          hits=$(printf '%s\n' "$hits" | grep -v -E '^VibeMeeting/App/IdentityMigration\.swift:[0-9]+: *static let legacyBundleID = "com\.ardhofortana\.VibeMeeting"$' | grep -v '^$' || true)
+          if [ -n "$hits" ]; then
+            printf '%s\n' "$hits"
+            echo "::error::Personal terms found in shipped sources (listed above)."
+            exit 1
           fi
           echo "No personal terms found."
 

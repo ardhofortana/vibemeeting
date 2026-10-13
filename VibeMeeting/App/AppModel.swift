@@ -7,7 +7,7 @@ import VibeCore
 @MainActor
 @Observable
 final class AppModel {
-    let settings = AppSettings()
+    let settings: AppSettings
     let store: SessionStore
     let transport = URLSessionTransport()
     let overlay = OverlayController()
@@ -32,11 +32,23 @@ final class AppModel {
     @ObservationIgnored var isTerminating = false
 
     init() {
-        if let store = try? SessionStore(directory: SessionStore.defaultDirectory()) {
+        // Before anything reads them: settings and the API key from the earlier
+        // bundle ID, once. Hotkeys are copied over the defaults KeyboardShortcuts writes.
+        let migrated = IdentityMigration.copySettings(
+            AppSettings.keysToMigrate + Hotkeys.storageKeys,
+            unlessSet: AppSettings.storedKeys
+        )
+        let settings = AppSettings()
+        self.settings = settings
+        if migrated { IdentityMigration.copyAPIKey(into: settings) }
+
+        if let store = try? SessionStore(directory: SessionStore.defaultDirectory(appFolder: AppIdentity.dataFolderName)) {
             self.store = store
         } else {
             Log.app.error("Application Support unavailable; saving sessions to a temporary folder")
-            let fallback = FileManager.default.temporaryDirectory.appendingPathComponent("VibeMeeting/Sessions")
+            let fallback = FileManager.default.temporaryDirectory
+                .appendingPathComponent(AppIdentity.dataFolderName, isDirectory: true)
+                .appendingPathComponent("Sessions", isDirectory: true)
             // A temporary directory is always creatable.
             self.store = try! SessionStore(directory: fallback)
         }
@@ -139,9 +151,9 @@ final class AppModel {
     }
 
     /// ~/Library/Application Support/VibeMeeting/Diagnostics/last-meeting.txt
+    /// ("VibeMeeting Dev" for a development build).
     static var diagnosticsFile: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("VibeMeeting/Diagnostics/last-meeting.txt")
+        AppIdentity.dataDirectory?.appendingPathComponent("Diagnostics/last-meeting.txt")
     }
 
     private static func saveDiagnostics(_ report: String) {

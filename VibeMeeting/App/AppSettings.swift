@@ -36,6 +36,18 @@ final class AppSettings {
         static let onboarded = "hasCompletedOnboarding"
     }
 
+    /// Every key these settings are stored under.
+    static let storedKeys = [
+        Key.replyModel, Key.recapModel, Key.aboutMe, Key.customPresets, Key.defaultPreset,
+        Key.overlayCorner, Key.overlayOpacity, Key.hideFromSharing, Key.compactOverlay,
+        Key.audioSourceBundleID, Key.voiceProcessing, Key.echoGate, Key.callLocale, Key.onboarded,
+    ]
+
+    /// Copied from the earlier bundle ID on first launch. Not onboarding: macOS
+    /// asks for the audio permissions again under a new identity, and Welcome
+    /// is where that happens.
+    static var keysToMigrate: [String] { storedKeys.filter { $0 != Key.onboarded } }
+
     private let defaults: UserDefaults
 
     var replyModelID: String { didSet { defaults.set(replyModelID, forKey: Key.replyModel) } }
@@ -46,6 +58,7 @@ final class AppSettings {
     var overlayCorner: OverlayCorner { didSet { defaults.set(overlayCorner.rawValue, forKey: Key.overlayCorner) } }
     /// Opacity of the overlay background (text stays fully opaque).
     var overlayOpacity: Double { didSet { defaults.set(overlayOpacity, forKey: Key.overlayOpacity) } }
+    /// Off by default; Settings shows a disclaimer before turning it on.
     var hideFromScreenSharing: Bool { didSet { defaults.set(hideFromScreenSharing, forKey: Key.hideFromSharing) } }
     var compactOverlay: Bool { didSet { defaults.set(compactOverlay, forKey: Key.compactOverlay) } }
     /// Bundle ID of the one app to capture, or nil for all system audio.
@@ -77,7 +90,8 @@ final class AppSettings {
         defaultPresetID = defaults.string(forKey: Key.defaultPreset) ?? StylePreset.friendlyProID
         overlayCorner = defaults.string(forKey: Key.overlayCorner).flatMap(OverlayCorner.init(rawValue:)) ?? .topRight
         overlayOpacity = defaults.object(forKey: Key.overlayOpacity) as? Double ?? 0.88
-        hideFromScreenSharing = defaults.object(forKey: Key.hideFromSharing) as? Bool ?? true
+        // A choice saved before (when this was on by default) is kept.
+        hideFromScreenSharing = defaults.object(forKey: Key.hideFromSharing) as? Bool ?? false
         compactOverlay = defaults.bool(forKey: Key.compactOverlay)
         audioSourceBundleID = defaults.string(forKey: Key.audioSourceBundleID)
         // Off by default: macOS voice processing ducks every other app (the call too)
@@ -104,6 +118,11 @@ final class AppSettings {
             try KeychainStore.save(trimmed, account: KeychainStore.apiKeyAccount)
         }
         hasAPIKey = !trimmed.isEmpty
+    }
+
+    /// Re-reads whether a key is stored, after one was saved outside `setAPIKey`.
+    func refreshAPIKeyState() {
+        hasAPIKey = !apiKey.isEmpty
     }
 
     // MARK: - Presets

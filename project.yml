@@ -2,7 +2,7 @@
 #   brew install xcodegen && xcodegen generate
 name: VibeMeeting
 options:
-  bundleIdPrefix: com.ardhofortana
+  bundleIdPrefix: com.djavaweb
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
@@ -30,8 +30,14 @@ targets:
       Release: Configs/Signing.xcconfig
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.ardhofortana.VibeMeeting
+        # Release identity. scripts/bundle-id.sh reads the bundle IDs from here.
+        PRODUCT_BUNDLE_IDENTIFIER: com.djavaweb.vibemeeting
         PRODUCT_NAME: VibeMeeting
+        # The name Finder and System Settings → Privacy & Security show.
+        APP_DISPLAY_NAME: VibeMeeting
+        # Folder in Application Support for meetings and diagnostics. Release keeps
+        # "VibeMeeting", where every earlier version saved meetings.
+        APP_DATA_FOLDER: VibeMeeting
         INFOPLIST_FILE: VibeMeeting/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: VibeMeeting/Resources/VibeMeeting.entitlements
@@ -42,6 +48,13 @@ targets:
         # Set by scripts/release.sh; see CHANGELOG.md.
         MARKETING_VERSION: 0.6.0
         CURRENT_PROJECT_VERSION: 7
+      configs:
+        # A development build is a separate app, so it never shares settings, the
+        # Keychain item, privacy permissions or meetings with a release install.
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.djavaweb.vibemeeting.debug
+          APP_DISPLAY_NAME: VibeMeeting Dev
+          APP_DATA_FOLDER: VibeMeeting Dev
     preBuildScripts:
       - name: Check signing Team
         basedOnDependencyAnalysis: false

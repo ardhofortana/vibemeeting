@@ -27,10 +27,12 @@ Di Xcode, buka target **VibeMeeting → Signing & Capabilities** dan pilih Team 
 ```bash
 scripts/save-signing-team.sh                        # membaca Team yang kamu pilih di Xcode
 xcodegen generate
-tccutil reset AudioCapture com.ardhofortana.VibeMeeting   # sekali, supaya macOS minta izin lagi untuk build yang sudah bertanda tangan Team
+tccutil reset AudioCapture "$(scripts/bundle-id.sh debug)"   # sekali, supaya macOS minta izin lagi untuk build yang sudah bertanda tangan Team
 ```
 
 Lalu Run (⌘R). Ikon gelombang akan muncul di menu bar.
+
+Build dari Xcode (konfigurasi Debug) adalah app terpisah, **VibeMeeting Dev** (`com.djavaweb.vibemeeting.debug`), dengan pengaturan, key di Keychain, izin macOS, dan folder meeting sendiri (`~/Library/Application Support/VibeMeeting Dev`). Jadi build pengembangan tidak pernah menyentuh instalasi rilis (`com.djavaweb.vibemeeting`). Meeting lama tetap di `~/Library/Application Support/VibeMeeting`, folder build rilis; salin file dari `VibeMeeting/Sessions` ke `VibeMeeting Dev/Sessions` kalau ingin melihatnya di build Debug. `scripts/bundle-id.sh` mencetak bundle ID rilis, dan `scripts/bundle-id.sh debug` bundle ID build Debug, langsung dari `project.yml`.
 
 > **Kenapa Team penting:** tanpa Team, Xcode menandatangani build secara ad-hoc ("Sign to Run Locally"). macOS mengikat izin System Audio Recording ke tanda tangan itu, jadi setiap rebuild dianggap app baru. Toggle di Privacy & Security tetap terlihat menyala, tapi audio sistem yang diterima hanya hening.
 
@@ -131,8 +133,8 @@ Cache dipanaskan dengan request `max_tokens: 0` saat **Start listening** dan dij
 ## Keputusan yang berbeda dari PRD atau perlu kamu tahu
 
 - **Model.** Reply memakai **Claude Haiku 5.5** dengan thinking dimatikan, karena PRD meminta model tercepat untuk Reply. Rekap memakai **Claude Opus 5.5** dengan server-side refusal fallback. Keduanya bisa diganti di Settings, dan pilihan finalnya ditentukan dari hasil `vibe-latency`. Dengan Haiku, biayanya jauh di bawah target US$1 per jam.
-- **Penyimpanan memakai file JSON, bukan SwiftData.** Satu file per meeting di `~/Library/Application Support/VibeMeeting/Sessions`. Alasannya: bisa dites di luar Mac, mudah dibaca, tidak perlu migrasi skema, dan hapus berarti file benar-benar terhapus.
-- **Hide from screen sharing.** Apple sekarang menganggap `NSWindow.sharingType = .none` sebagai legacy, dan screen share berbasis ScreenCaptureKit di macOS 15+ bisa tetap menangkap overlay. Opsinya tetap ada (default menyala), tapi sembunyikan overlay dengan ⌥H sebelum share screen.
+- **Penyimpanan memakai file JSON, bukan SwiftData.** Satu file per meeting di `~/Library/Application Support/VibeMeeting/Sessions` (build Debug: `VibeMeeting Dev/Sessions`). Alasannya: bisa dites di luar Mac, mudah dibaca, tidak perlu migrasi skema, dan hapus berarti file benar-benar terhapus.
+- **Hide from screen sharing.** Default mati. Apple sekarang menganggap `NSWindow.sharingType = .none` sebagai legacy, dan beberapa app screen share (yang berbasis ScreenCaptureKit di macOS 15+) bisa tetap menangkap overlay, jadi sembunyikan overlay dengan ⌥H sebelum share screen. Saat dinyalakan, Settings → Overlay menampilkan disclaimer dulu: VibeMeeting tidak mendukung pemakaian untuk menipu orang, pengguna bertanggung jawab mematuhi hukum dan meminta persetujuan peserta call lain, dan Djavaweb tidak bertanggung jawab atas cara fitur itu dipakai.
 - **Suara lawan bicara yang bocor ke mic (pakai speaker).** Dua lapis pertahanan, keduanya aktif secara default:
   - `EchoGate` membandingkan pola level suara mic dengan audio call. Kalau mic hanya berisi suara mereka yang keluar dari speaker, bagian itu dibisukan untuk transkripsi **You** saja; call-nya tidak terpengaruh. Kalau kamu bicara bersamaan, suaramu lebih keras dari perkiraan bocoran, jadi tetap lolos. Bisa dimatikan di Settings → Audio → **Remove the call's voice from my mic**. Statusnya (lag, level, berapa detik dibisukan) ada di Audio check dan di report.
   - `EchoFilter` membuang teks **You** yang meniru ucapan **Them**: salinan yang hampir sama, dan juga versi yang salah dengar parah ("women's healthies" untuk "Yemen's Halbies"). Kata-katanya disejajarkan satu per satu (kata yang sama, kata yang bunyinya mirip, dan urutannya), dan hanya bagian yang benar-benar gema yang dibuang, jadi "Yeah okay" di depannya tetap ada. Jawaban yang memakai ulang beberapa kata mereka tidak ikut terbuang. Teks live yang meniru **Them** tidak ditampilkan, dan baris **You** yang selesai lebih dulu dihapus begitu teks **Them** yang sama datang.
@@ -157,4 +159,4 @@ VIBE_LOCAL_SSE_URL=http://127.0.0.1:18777 swift test --package-path Packages/Vib
 
 CI (`.github/workflows/ci.yml`) menjalankan tes inti di Linux dan build app di runner macOS 26.
 
-Log teknis memakai `os.Logger` (subsystem `com.ardhofortana.VibeMeeting`) dan tidak pernah berisi transkrip, konteks, atau script.
+Log teknis memakai `os.Logger` dengan bundle ID sebagai subsystem (`com.djavaweb.vibemeeting`, atau `com.djavaweb.vibemeeting.debug` untuk build Debug) dan tidak pernah berisi transkrip, konteks, atau script.

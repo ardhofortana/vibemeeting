@@ -486,6 +486,7 @@ private struct AudioSettings: View {
 
 private struct OverlaySettings: View {
     @Environment(AppModel.self) private var app
+    @State private var confirmingHide = false
 
     var body: some View {
         @Bindable var settings = app.settings
@@ -508,12 +509,28 @@ private struct OverlaySettings: View {
                 Toggle("Compact mode: one narrow column with the last two turns and the current script (instead of transcript and responses side by side)", isOn: $settings.compactOverlay)
             }
             Section {
-                Toggle("Hide from screen sharing", isOn: $settings.hideFromScreenSharing)
-                    .onChange(of: settings.hideFromScreenSharing) {
-                        app.overlay.apply(settings: app.settings)
+                // Turning it on asks first; turning it off doesn't.
+                Toggle("Hide from screen sharing", isOn: Binding(
+                    get: { settings.hideFromScreenSharing },
+                    set: { on in
+                        if on {
+                            confirmingHide = true
+                        } else {
+                            settings.hideFromScreenSharing = false
+                        }
                     }
+                ))
+                .onChange(of: settings.hideFromScreenSharing) {
+                    app.overlay.apply(settings: app.settings)
+                }
+                .alert("Hide the overlay from screen sharing?", isPresented: $confirmingHide) {
+                    Button("Turn on") { settings.hideFromScreenSharing = true }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("VibeMeeting asks macOS to leave the overlay out of screen sharing, but some screen-sharing apps may still capture it. Before you share your screen, hide the overlay with \(Hotkeys.label(.toggleOverlay)).\n\nVibeMeeting does not support use meant to deceive people, for example getting covert help where that isn't allowed, such as in interviews or exams. You are responsible for following the law and for getting consent from others in the call. Djavaweb is not responsible for how you use this feature.")
+                }
             } footer: {
-                Text("Recent macOS versions let many screen-sharing apps capture the overlay anyway. Before you share your screen, hide it with \(Hotkeys.label(.toggleOverlay)).")
+                Text("Off by default. Some screen-sharing apps may still capture the overlay, so hide it with \(Hotkeys.label(.toggleOverlay)) before you share your screen. Don't use it to deceive people: you're responsible for following the law and getting consent from others in the call, and Djavaweb isn't responsible for how you use this feature.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

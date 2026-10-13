@@ -291,6 +291,15 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: future.path))
     }
 
+    func testDefaultDirectoryUsesTheAppsFolder() throws {
+        // Release keeps "VibeMeeting", where earlier versions saved; a development build gets its own.
+        let release = try SessionStore.defaultDirectory(appFolder: "VibeMeeting")
+        let development = try SessionStore.defaultDirectory(appFolder: "VibeMeeting Dev")
+        XCTAssertEqual(release.pathComponents.suffix(2), ["VibeMeeting", "Sessions"])
+        XCTAssertEqual(development.pathComponents.suffix(2), ["VibeMeeting Dev", "Sessions"])
+        XCTAssertEqual(release.deletingLastPathComponent().deletingLastPathComponent(), development.deletingLastPathComponent().deletingLastPathComponent())
+    }
+
     func testPercentiles() {
         XCTAssertNil(SessionStats.percentile([], 0.5))
         XCTAssertEqual(SessionStats.percentile([1, 2, 3], 0.5), 2)

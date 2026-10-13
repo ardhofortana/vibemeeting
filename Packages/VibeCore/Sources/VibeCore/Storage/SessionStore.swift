@@ -44,10 +44,11 @@ public final class SessionStore: @unchecked Sendable {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    /// `~/Library/Application Support/VibeMeeting/Sessions` on macOS.
-    public static func defaultDirectory() throws -> URL {
+    /// `~/Library/Application Support/<appFolder>/Sessions` on macOS. The app
+    /// passes its folder, so release and development builds keep separate meetings.
+    public static func defaultDirectory(appFolder: String) throws -> URL {
         let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        return base.appendingPathComponent("VibeMeeting", isDirectory: true).appendingPathComponent("Sessions", isDirectory: true)
+        return base.appendingPathComponent(appFolder, isDirectory: true).appendingPathComponent("Sessions", isDirectory: true)
     }
 
     public func url(for id: UUID) -> URL {

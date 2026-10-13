@@ -26,6 +26,14 @@ if grep -qF "## [$version]" CHANGELOG.md; then
   exit 1
 fi
 
+# Compare links point at the repo this clone came from (an https or ssh remote).
+origin=$(git remote get-url origin 2>/dev/null || true)
+repo=$(sed -E 's#^git@([^:]+):#https://\1/#; s#^ssh://git@([^/]+)/#https://\1/#; s#^https://[^/@]+@#https://#; s#\.git$##; s#/$##' <<<"$origin")
+if ! [[ "$repo" =~ ^https://[^/]+/[^/]+/[^/]+$ ]]; then
+  echo "Can't make the CHANGELOG compare links: origin is \"$origin\". Add the GitHub remote as origin first."
+  exit 1
+fi
+
 notes=$(awk '/^## \[Unreleased\]/ { f = 1; next } /^## \[/ { f = 0 } f' CHANGELOG.md | grep -v '^[[:space:]]*$' || true)
 if [ -z "$notes" ]; then
   echo "CHANGELOG.md has nothing under [Unreleased]. Write what changed there first."
@@ -40,7 +48,6 @@ if [ "$newest" != "$version" ]; then
 fi
 build=$(( $(sed -nE 's/^ *CURRENT_PROJECT_VERSION: *([0-9]+).*/\1/p' project.yml) + 1 ))
 today=$(date +%Y-%m-%d)
-repo="https://github.com/ardhofortana/vibemeeting"
 
 # project.yml (sed -i.bak works with both BSD and GNU sed)
 sed -i.bak -E "s/^( *MARKETING_VERSION: *).*/\1$version/; s/^( *CURRENT_PROJECT_VERSION: *).*/\1$build/" project.yml
