@@ -238,6 +238,18 @@ private struct ProfileSettings: View {
     @Environment(AppModel.self) private var app
     @State private var confirmingClear = false
 
+    /// Shown in the empty About me field.
+    private static let outline = LocalizedStringResource("""
+    Name:
+    What I do:
+    Who I usually meet:
+    How I want to come across:
+    Facts replies may use:
+    Things I never say:
+
+    Write it in any language.
+    """, comment: "Settings → About me: outline shown while the field is empty. Keep one heading per line.")
+
     var body: some View {
         @Bindable var settings = app.settings
         VStack(alignment: .leading, spacing: 8) {
@@ -253,7 +265,7 @@ private struct ProfileSettings: View {
                 .padding(6)
                 .overlay(alignment: .topLeading) {
                     if settings.aboutMe.isEmpty {
-                        Text(Prompts.aboutMePlaceholder)
+                        Text(Self.outline)
                             .font(.body.monospaced())
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 11)
@@ -335,7 +347,7 @@ private struct PresetSettings: View {
                     CustomPresetEditor(preset: $settings.customPresets[index])
                 } else if let selectedID, let preset = StylePreset.builtIns.first(where: { $0.id == selectedID }) {
                     Text(preset.name).font(.headline)
-                    Text(preset.lengthDescription).font(.caption).foregroundStyle(.secondary)
+                    Text(preset.lengthText).font(.caption).foregroundStyle(.secondary)
                     Text(preset.instructions)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -391,6 +403,15 @@ private struct CustomPresetEditor: View {
                 .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
         }
+    }
+}
+
+extension StylePreset {
+    /// "2–4 sentences", in the app's language. "%lld sentences" has plural variants in Localizable.xcstrings.
+    var lengthText: String {
+        minSentences == maxSentences
+            ? String(localized: "\(minSentences) sentences", comment: "A reply style's length when it's one number of sentences.")
+            : String(localized: "\(minSentences)–\(maxSentences) sentences", comment: "A reply style's length: the fewest and the most sentences.")
     }
 }
 
@@ -542,10 +563,10 @@ private struct OverlaySettings: View {
                     Button("Turn on") { settings.hideFromScreenSharing = true }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("VibeMeeting asks macOS to leave the overlay out of screen sharing, but some screen-sharing apps may still capture it. Before you share your screen, hide the overlay with \(Hotkeys.label(.toggleOverlay)).\n\nVibeMeeting does not support use meant to deceive people, for example getting covert help where that isn't allowed, such as in interviews or exams. You are responsible for following the law and for getting consent from others in the call. Djavaweb is not responsible for how you use this feature.")
+                    Text("VibeMeeting asks macOS to leave the overlay out of screen sharing, but some screen-sharing apps may still capture it. Before you share your screen, hide the overlay with its hotkey or from the menu bar.\n\nVibeMeeting does not support use meant to deceive people, for example getting covert help where that isn't allowed, such as in interviews or exams. You are responsible for following the law and for getting consent from others in the call. Djavaweb is not responsible for how you use this feature.")
                 }
             } footer: {
-                Text("Off by default. Some screen-sharing apps may still capture the overlay, so hide it with \(Hotkeys.label(.toggleOverlay)) before you share your screen. Don't use it to deceive people: you're responsible for following the law and getting consent from others in the call, and Djavaweb isn't responsible for how you use this feature.")
+                Text("Off by default. Some screen-sharing apps may still capture the overlay, so hide it with its hotkey or from the menu bar before you share your screen. Don't use it to deceive people: you're responsible for following the law and getting consent from others in the call, and Djavaweb isn't responsible for how you use this feature.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

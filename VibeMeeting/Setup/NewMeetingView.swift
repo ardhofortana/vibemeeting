@@ -179,18 +179,18 @@ struct NewMeetingView: View {
             Text("Same as the call").tag(String?.none)
             Divider()
             ForEach(MeetingLanguage.sortedWritingLanguages, id: \.self) { identifier in
-                Text(MeetingLanguage.displayName(of: identifier)).tag(String?.some(identifier))
+                Text(MeetingLanguage.pickerName(of: identifier)).tag(String?.some(identifier))
             }
         }
     }
 
-    /// What the chosen call language means for this meeting.
+    /// What the chosen languages mean for this meeting. Each sentence is its own localized string.
     private func languageNote(_ call: String) -> String {
-        var note = "Both sides are transcribed in this language. Replies, Ask questions and the recap follow it unless you pick another."
+        var note = String(localized: "Both sides are transcribed in this language. Replies, Ask questions and the recap follow it unless you pick another.")
         if !app.languages.isInstalled(call) {
-            note += " The speech model for \(MeetingLanguage.displayName(of: call)) downloads when the meeting starts (once per language)."
+            note += " " + String(localized: "The speech model for \(MeetingLanguage.displayName(of: call)) downloads when the meeting starts (once per language).")
         }
-        if MeetingLanguage.isPreview(call) {
+        if [call, scriptLanguage, recapLanguage].contains(where: { $0.map(MeetingLanguage.isPreview) == true }) {
             note += " " + MeetingLanguage.previewNote
         }
         return note
@@ -409,7 +409,7 @@ private struct PresetCard: View {
             stop = true
         }
         let trimmed = first.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? preset.lengthDescription : trimmed
+        return trimmed.isEmpty ? preset.lengthText : trimmed
     }
 }
 

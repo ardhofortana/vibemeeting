@@ -215,7 +215,7 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertTrue(Prompts.recapRules.contains("Decisions are only things that were actually agreed on in the meeting."))
 
         let schema = String(decoding: try JSONEncoder().encode(Recap.jsonSchema), as: UTF8.self)
-        let shipped = [rules, Prompts.questionsTask, Prompts.recapRules, Prompts.recapChunkInstruction, Prompts.aboutMePlaceholder, schema]
+        let shipped = [rules, Prompts.questionsTask, Prompts.recapRules, Prompts.recapChunkInstruction, schema]
             + ReplyIntent.allCases.map(\.instruction)
         // No seller's posture by default: firmness on price and scope belongs to the Negotiator style.
         let salesTerms = ["client", "price and scope", "prices and scope", "scope and price", "lock the scope", "discount", "proposal", "both sides"]
@@ -234,13 +234,9 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertFalse(StylePreset.builtIns.contains { $0.instructions.lowercased().contains("client") })
     }
 
-    func testAboutMeStartsEmptyWithAnOutline() {
-        let outline = Prompts.aboutMePlaceholder
-        for heading in ["Name:", "What I do:", "Who I usually meet:", "How I want to come across:", "Facts replies may use:", "Things I never say:"] {
-            XCTAssertTrue(outline.contains(heading), heading)
-        }
-        XCTAssertTrue(outline.contains("any language"))
-        // An empty profile still sends a clear note instead of an empty tag.
+    func testEmptyAboutMeSendsANote() {
+        // About me starts empty (the app shows an outline); an empty profile
+        // still sends a clear note instead of an empty tag.
         let request = ReplyPromptBuilder(model: .haiku55).request(
             meeting: MeetingPromptContext(aboutMe: "", context: [], preset: .friendlyPro, meetingInstructions: ""),
             ask: ask()
@@ -284,7 +280,8 @@ final class PromptBuilderTests: XCTestCase {
         let builtIns = StylePreset.builtIns
         XCTAssertEqual(builtIns.map(\.id), ["builtin.friendly-pro", "builtin.consultant", "builtin.negotiator", "builtin.tech-explainer", "builtin.short-sweet", "builtin.diplomatic"])
         XCTAssertEqual(builtIns.map(\.name), ["Friendly Pro", "Consultant", "Negotiator", "Tech Explainer", "Short & Sweet", "Diplomatic"])
-        XCTAssertEqual(builtIns.map(\.lengthDescription), ["2–4 sentences", "3–5 sentences", "2–4 sentences", "3–5 sentences", "1–2 sentences", "2–4 sentences"])
+        XCTAssertEqual(builtIns.map(\.minSentences), [2, 3, 2, 3, 1, 2])
+        XCTAssertEqual(builtIns.map(\.maxSentences), [4, 5, 4, 5, 2, 4])
         for preset in builtIns {
             XCTAssertTrue(preset.isBuiltIn)
             // The first sentence is the one-line description in the New meeting window.

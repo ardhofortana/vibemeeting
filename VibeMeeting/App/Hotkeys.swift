@@ -43,10 +43,14 @@ enum Hotkeys {
 
     static var names: [KeyboardShortcuts.Name] { entries.map(\.name) }
 
-    /// The UserDefaults keys KeyboardShortcuts saves these hotkeys under.
-    static var storageKeys: [String] { names.map { "KeyboardShortcuts_\($0.rawValue)" } }
+    /// The UserDefaults keys KeyboardShortcuts saves these hotkeys under. Literal
+    /// names, so reading them doesn't create the names: creating one stores its
+    /// default and registers it system-wide when nothing is stored yet.
+    static let storageKeys = ["reply", "answer", "clarify", "add", "pushBack", "steer", "regenerate", "shorter", "askQuestions", "toggleOverlay"]
+        .map { "KeyboardShortcuts_\($0)" }
 
     static func install(app: AppModel) {
+        assert(Set(storageKeys) == Set(names.map { "KeyboardShortcuts_\($0.rawValue)" }), "storageKeys must list every hotkey")
         KeyboardShortcuts.onKeyDown(for: .reply) { [weak app] in app?.activeSession?.reply() }
         KeyboardShortcuts.onKeyDown(for: .answer) { [weak app] in app?.activeSession?.reply(intent: .answer) }
         KeyboardShortcuts.onKeyDown(for: .clarify) { [weak app] in app?.activeSession?.reply(intent: .clarify) }

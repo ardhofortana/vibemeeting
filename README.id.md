@@ -63,7 +63,7 @@ Detail setiap meeting menampilkan perkiraan biayanya. Akun Anthropic yang baru m
 
 ## Privasi
 
-Audio tidak pernah keluar dari Mac ini dan meeting hanya disimpan di Mac ini; untuk menulis jawaban dan rekap, VibeMeeting mengirim teks transkrip, About me, dan apa yang kamu tambahkan ke meeting (goal, instruksi, Steer, dan konteks, termasuk teks file dan gambar) ke Anthropic dengan API key milikmu sendiri.
+Audio tidak pernah keluar dari Mac ini dan meeting hanya disimpan di Mac ini; untuk menulis jawaban dan rekap, VibeMeeting mengirim teks transkrip, About me, reply style, dan apa yang kamu tambahkan ke meeting (nama, goal, instruksi, Steer, dan konteks, termasuk teks file dan gambar) ke Anthropic dengan API key milikmu sendiri.
 
 Lebih rincinya:
 
@@ -113,7 +113,7 @@ Hotkey hanya aktif selama meeting berjalan, jadi tidak pernah mengganggu app lai
 
 VibeMeeting adalah asisten yang kamu pakai secara terbuka. App ini tidak mendukung pemakaian untuk menipu orang, misalnya mendapat bantuan diam-diam di tempat yang tidak membolehkannya, seperti wawancara kerja atau ujian. Kamu bertanggung jawab mematuhi hukum di tempatmu dan di tempat peserta call lainnya, termasuk meminta persetujuan mereka untuk ditranskripsi kalau diwajibkan. Djavaweb tidak bertanggung jawab atas cara kamu memakai VibeMeeting.
 
-**Hide from screen sharing** (Settings → Overlay) mati secara default. Pengaturan ini meminta macOS untuk tidak menyertakan overlay saat screen sharing, tapi beberapa app screen sharing mungkin tetap menangkapnya, jadi sembunyikan overlay dengan ⌥H sebelum kamu share screen. Saat dinyalakan, disclaimer yang sama tampil lebih dulu.
+**Hide from screen sharing** (Settings → Overlay) mati secara default. Pengaturan ini meminta macOS untuk tidak menyertakan overlay saat screen sharing, tapi beberapa app screen sharing mungkin tetap menangkapnya, jadi sembunyikan overlay dengan hotkey-nya (⌥H kalau belum kamu ganti) atau dari menu bar sebelum kamu share screen. Saat dinyalakan, disclaimer yang sama tampil lebih dulu.
 
 ## Kalau ada masalah
 

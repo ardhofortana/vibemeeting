@@ -5,7 +5,8 @@
 - Every VibeMeeting/*.xcstrings file is valid JSON with English as its source
   language, so a hand edit can't break the build.
 - The English permission prompts in InfoPlist.xcstrings say exactly what
-  Info.plist says, so the two never drift apart (see docs/COPY.md).
+  Info.plist says, so the two never drift apart (see docs/COPY.md). Keys
+  Info.plist sets from build settings, such as the display name, are skipped.
 """
 import json
 import pathlib
@@ -43,9 +44,12 @@ for key, entry in loaded.get("InfoPlist.xcstrings", {}).get("strings", {}).items
     unit = entry.get("localizations", {}).get("en", {}).get("stringUnit")
     if unit is None:
         continue
+    plist_value = info_plist.get(key)
+    if isinstance(plist_value, str) and "$(" in plist_value:
+        continue  # set per build configuration (APP_DISPLAY_NAME, PRODUCT_NAME); nothing fixed to compare
     if key not in info_plist:
         problems.append(f"InfoPlist.xcstrings: {key} has an English value but isn't in Info.plist.")
-    elif unit.get("value") != info_plist[key]:
+    elif unit.get("value") != plist_value:
         problems.append(f"InfoPlist.xcstrings: the English {key} differs from Info.plist. Change both together.")
 
 if problems:

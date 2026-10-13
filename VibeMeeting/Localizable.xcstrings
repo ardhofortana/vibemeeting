@@ -70,6 +70,29 @@
         }
       }
     },
+    "%lld sentences" : {
+      "comment" : "A reply style's length when it's one number of sentences.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sentence"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sentences"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "At least %lld sentences" : {
       "comment" : "Settings → Reply styles: the shortest reply a style asks for.",
       "localizations" : {

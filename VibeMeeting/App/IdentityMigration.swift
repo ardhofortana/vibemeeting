@@ -11,9 +11,15 @@ enum IdentityMigration {
 
     /// Copies `keys` from the earlier identity's settings, once, and only while
     /// this identity has none of `ownKeys`, so nothing chosen here is overwritten.
-    /// Returns whether the earlier app's settings were found and copied. Call it
-    /// before anything reads these settings.
-    static func copySettings(_ keys: [String], unlessSet ownKeys: [String], defaults: UserDefaults = .standard) -> Bool {
+    /// `earlierDefaults` are what the earlier app used for keys it never stored;
+    /// they're set where its settings have no value. Returns whether the earlier
+    /// app's settings were found and copied. Call it before anything reads these settings.
+    static func copySettings(
+        _ keys: [String],
+        unlessSet ownKeys: [String],
+        earlierDefaults: [String: Any] = [:],
+        defaults: UserDefaults = .standard
+    ) -> Bool {
         guard !defaults.bool(forKey: doneKey) else { return false }
         defaults.set(true, forKey: doneKey)
         guard !ownKeys.contains(where: { defaults.object(forKey: $0) != nil }),
@@ -24,6 +30,9 @@ enum IdentityMigration {
             guard let value = legacy[key] else { continue }
             defaults.set(value, forKey: key)
             copied += 1
+        }
+        for (key, value) in earlierDefaults where legacy[key] == nil {
+            defaults.set(value, forKey: key)
         }
         Log.app.info("Copied \(copied, privacy: .public) settings from the earlier app identity")
         return true

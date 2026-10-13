@@ -15,13 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Check app, VibeCore, project and script sources
+      - name: Check app, VibeCore, project, script and docs sources
         # The app ships to anyone, so one person's names and business details stay out of it.
         # One line may name the bundle ID from before the Djavaweb identity: the app reads
         # it once to copy settings and the API key (VibeMeeting/App/IdentityMigration.swift).
         run: |
           set +e
-          hits=$(git grep -n -i -I -E 'ardho|ardhofortana|detheme|fiverr|pressable|elementor|jetengine' -- VibeMeeting Packages/VibeCore/Sources project.yml scripts Configs)
+          hits=$(git grep -n -i -I -E 'ardho|ardhofortana|detheme|fiverr|pressable|elementor|jetengine' -- VibeMeeting Packages/VibeCore/Sources project.yml scripts Configs docs)
           status=$?
           set -e
           if [ "$status" -gt 1 ]; then

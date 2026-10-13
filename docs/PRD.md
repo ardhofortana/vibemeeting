@@ -1,6 +1,6 @@
 # VibeMeeting product brief (v2)
 
-> Stub. This replaces the personal v1 spec, now archived at [`archive/PRD-v1.md`](archive/PRD-v1.md). Sections marked "to do" get filled in as the roadmap lands.
+> Stub. This replaces the original personal v1 spec, which is kept outside the repository. Sections marked "to do" get filled in as the roadmap lands.
 
 ## Purpose
 

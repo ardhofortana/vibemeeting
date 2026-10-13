@@ -1,6 +1,6 @@
 # Developing VibeMeeting
 
-Building, signing, testing, releasing and rolling back VibeMeeting. For using the app, see [README.md](README.md). For wording and translation-ready strings, see [docs/COPY.md](docs/COPY.md). The product brief is [docs/PRD.md](docs/PRD.md); the original v1 spec is archived in [docs/archive/PRD-v1.md](docs/archive/PRD-v1.md).
+Building, signing, testing, releasing and rolling back VibeMeeting. For using the app, see [README.md](README.md). For wording and translation-ready strings, see [docs/COPY.md](docs/COPY.md). The product brief is [docs/PRD.md](docs/PRD.md).
 
 ## Requirements
 
@@ -66,7 +66,7 @@ python3 scripts/check-catalogs.py                  # string catalogs and permiss
 
 `.github/workflows/ci.yml` runs on every push:
 
-- **personal-terms**: one person's names and business details stay out of the shipped sources (app, VibeCore, `project.yml`, `scripts/`, `Configs/`).
+- **personal-terms**: one person's names and business details stay out of the shipped sources (app, VibeCore, `project.yml`, `scripts/`, `Configs/`, `docs/`).
 - **catalogs**: `scripts/check-catalogs.py`.
 - **core**: the VibeCore tests on Linux, with the local SSE server.
 - **app**: the VibeCore tests on macOS 26, then `xcodegen generate` and an unsigned Debug build of the app.
@@ -167,7 +167,8 @@ Meeting content (transcript, context files, screenshots) is data, never instruct
 - App text goes through `VibeMeeting/Localizable.xcstrings`; the permission prompts through `VibeMeeting/InfoPlist.xcstrings`. Both sit in `VibeMeeting/` because the target excludes `VibeMeeting/Resources/`.
 - `SWIFT_EMIT_LOC_STRINGS` and `LOCALIZATION_PREFERS_STRING_CATALOGS` are on. When you build in Xcode, it adds new keys to the catalogs; commit those changes. Only plural variants and comments need editing by hand.
 - After the first build in Xcode, Xcode may also list the bundle name, display name and copyright in InfoPlist.xcstrings. Mark them **Don't Translate**: the display name comes from `APP_DISPLAY_NAME`, which differs per build ("VibeMeeting Dev" for Debug). Check that the development build still shows "VibeMeeting Dev" in System Settings afterwards.
-- `scripts/check-catalogs.py` (also in CI) checks that the catalogs are valid JSON and that the English permission prompts in InfoPlist.xcstrings match Info.plist.
+- Before you hand out a Release build (an archive or `xcodebuild`), check its English names: `plutil -p VibeMeeting.app/Contents/Resources/en.lproj/InfoPlist.strings` must not show "VibeMeeting Dev" for `CFBundleDisplayName`. If it does, delete the `CFBundleDisplayName` and `CFBundleName` entries from InfoPlist.xcstrings and build again.
+- `scripts/check-catalogs.py` (also in CI) checks that the catalogs are valid JSON and that the English permission prompts in InfoPlist.xcstrings match Info.plist. Keys Info.plist sets from build settings (the bundle and display names) differ per build, so it skips them.
 - How to write strings that can be translated: [docs/COPY.md](docs/COPY.md).
 
 ## Logging and diagnostics
@@ -222,7 +223,7 @@ Notes:
 - A rollback never deletes meeting files. Versions after 0.6.0 list meetings they can't read and open meetings from a newer version read-only. Version 0.6.0 and earlier just leave a meeting they can't read out of History until you update. But if an older version saves a newer meeting again (for example when you rename it or create its recap again), what it doesn't know about is lost. The **Compatibility** notes in CHANGELOG.md say what for each version.
 - Versions up to 0.6.0 run under the bundle ID from before the Djavaweb identity, with the settings, Keychain key and permissions they had there. They read meetings from `~/Library/Application Support/VibeMeeting`, so meetings saved by VibeMeeting Dev don't show in them.
 - From 0.2.0 on, the signing Team (`Configs/Local.xcconfig`) doesn't change when you switch versions, so the audio permission stays.
-- v0.1.0 doesn't read `Configs/Local.xcconfig`. After `xcodegen generate`, pick the same Team by hand in the VibeMeeting target → Signing & Capabilities before ⌘R. Without a Team the build is ad hoc and system audio is silent. If audio is silent after you come back to the latest version, run `tccutil reset AudioCapture "$(scripts/bundle-id.sh debug)"` and allow it again.
+- v0.1.0 doesn't read `Configs/Local.xcconfig`. After `xcodegen generate`, pick the same Team by hand in the VibeMeeting target → Signing & Capabilities before ⌘R. Without a Team the build is ad hoc and system audio is silent. If system audio is then silent in a version from 0.2.0 to 0.6.0, run `tccutil reset AudioCapture` with the bundle ID from before the Djavaweb identity (`IdentityMigration.legacyBundleID`) and allow it again. The latest version has its own bundle ID and isn't affected.
 - Versions 0.1.0 to 0.4.0 were tagged later. Builds of them show 0.1.0 in the app, because the version number is only set from 0.5.0 on.
 - To get the tags on GitHub too, run `git push origin --tags` from your Mac.
 

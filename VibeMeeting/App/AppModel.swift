@@ -33,10 +33,11 @@ final class AppModel {
 
     init() {
         // Before anything reads them: settings and the API key from the earlier
-        // bundle ID, once. Hotkeys are copied over the defaults KeyboardShortcuts writes.
+        // bundle ID, once. Hotkeys are copied before KeyboardShortcuts creates the names.
         let migrated = IdentityMigration.copySettings(
             AppSettings.keysToMigrate + Hotkeys.storageKeys,
-            unlessSet: AppSettings.storedKeys
+            unlessSet: AppSettings.storedKeys,
+            earlierDefaults: AppSettings.earlierDefaults
         )
         let settings = AppSettings()
         self.settings = settings

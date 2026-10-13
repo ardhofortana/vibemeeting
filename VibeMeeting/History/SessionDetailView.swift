@@ -12,7 +12,7 @@ struct SessionDetailView: View {
         case context
         var id: Self { self }
 
-        var title: String {
+        var title: LocalizedStringResource {
             switch self {
             case .recap: return "Recap"
             case .transcript: return "Transcript"

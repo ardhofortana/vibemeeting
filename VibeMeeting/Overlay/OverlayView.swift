@@ -338,10 +338,10 @@ private struct TranscriptStatus {
         case .starting:
             if let modelProgress {
                 self.init(
-                    caption: "Speech model \(Int((modelProgress * 100).rounded()))%",
+                    caption: String(localized: "Speech model \(modelProgress.formatted(.percent.precision(.fractionLength(0))))", comment: "Overlay: the speech model's download progress, such as 42%."),
                     color: .orange,
                     isLive: false,
-                    help: "Downloading the speech model for this meeting's language. It's needed once per language."
+                    help: String(localized: "Downloading the speech model for this meeting's language. It's needed once per language.")
                 )
             } else {
                 self.init(caption: "Starting…", color: .orange, isLive: false, help: "Starting audio capture")

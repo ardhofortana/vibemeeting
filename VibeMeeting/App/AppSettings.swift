@@ -48,6 +48,13 @@ final class AppSettings {
     /// is where that happens.
     static var keysToMigrate: [String] { storedKeys.filter { $0 != Key.onboarded } }
 
+    /// What the earlier app used where it stored nothing: it saved a setting only
+    /// once changed. Hide from screen sharing was on, and every call was English
+    /// (United States). A migrated install keeps them; new installs get the defaults below.
+    static var earlierDefaults: [String: Any] {
+        [Key.hideFromSharing: true, Key.callLocale: MeetingLanguage.fallbackCallLocale]
+    }
+
     private let defaults: UserDefaults
 
     var replyModelID: String { didSet { defaults.set(replyModelID, forKey: Key.replyModel) } }
@@ -90,7 +97,7 @@ final class AppSettings {
         defaultPresetID = defaults.string(forKey: Key.defaultPreset) ?? StylePreset.friendlyProID
         overlayCorner = defaults.string(forKey: Key.overlayCorner).flatMap(OverlayCorner.init(rawValue:)) ?? .topRight
         overlayOpacity = defaults.object(forKey: Key.overlayOpacity) as? Double ?? 0.88
-        // A choice saved before (when this was on by default) is kept.
+        // Installs from before it was off by default keep theirs (`earlierDefaults`).
         hideFromScreenSharing = defaults.object(forKey: Key.hideFromSharing) as? Bool ?? false
         compactOverlay = defaults.bool(forKey: Key.compactOverlay)
         audioSourceBundleID = defaults.string(forKey: Key.audioSourceBundleID)

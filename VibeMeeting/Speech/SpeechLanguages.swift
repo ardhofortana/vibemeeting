@@ -72,7 +72,9 @@ extension MeetingLanguage {
 
     /// The name, marked "preview" for languages the transcript tools aren't tuned for yet.
     static func pickerName(of identifier: String) -> String {
-        isPreview(identifier) ? "\(displayName(of: identifier)) (preview)" : displayName(of: identifier)
+        isPreview(identifier)
+            ? String(localized: "\(displayName(of: identifier)) (preview)", comment: "A language in a picker, marked as a preview.")
+            : displayName(of: identifier)
     }
 
     /// Languages offered for replies and recaps, sorted by name.
@@ -81,5 +83,7 @@ extension MeetingLanguage {
     }
 
     /// Shown wherever a preview language can be picked.
-    static let previewNote = "Languages not written in the Latin or Cyrillic alphabet (such as Chinese, Japanese, Korean, Thai, Arabic and Hebrew) are a preview for now: sentence splitting, word counts and the echo filter are tuned for the others."
+    static var previewNote: String {
+        String(localized: "Languages not written in the Latin or Cyrillic alphabet (such as Chinese, Japanese, Korean, Thai, Arabic and Hebrew) are a preview for now: sentence splitting, word counts and the echo filter are tuned for the others.")
+    }
 }

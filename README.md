@@ -61,7 +61,7 @@ Each meeting's details show an estimated cost. New Anthropic accounts start with
 
 ## Privacy
 
-Audio never leaves this Mac and meetings are stored only on it; to write replies and recaps, VibeMeeting sends the transcript text, About me and what you add to the meeting (goal, instructions, Steer and context, including file text and images) to Anthropic with your own API key.
+Audio never leaves this Mac and meetings are stored only on it; to write replies and recaps, VibeMeeting sends the transcript text, About me, your reply style and what you add to the meeting (name, goal, instructions, Steer and context, including file text and images) to Anthropic with your own API key.
 
 In more detail:
 
@@ -111,7 +111,7 @@ Hotkeys work only while a meeting is running, so they never get in the way in ot
 
 VibeMeeting is an assistant you use openly. It doesn't support use meant to deceive people, for example getting covert help where that isn't allowed, such as in job interviews or exams. You're responsible for following the law where you and the other people in the call are, including getting their consent to transcription where it's required. Djavaweb isn't responsible for how you use VibeMeeting.
 
-**Hide from screen sharing** (Settings → Overlay) is off by default. It asks macOS to leave the overlay out of screen sharing, but some screen-sharing apps may still capture it, so hide the overlay with ⌥H before you share your screen. Turning the setting on shows the same disclaimer first.
+**Hide from screen sharing** (Settings → Overlay) is off by default. It asks macOS to leave the overlay out of screen sharing, but some screen-sharing apps may still capture it, so hide the overlay with its hotkey (⌥H unless you changed it) or from the menu bar before you share your screen. Turning the setting on shows the same disclaimer first.
 
 ## Troubleshooting
 

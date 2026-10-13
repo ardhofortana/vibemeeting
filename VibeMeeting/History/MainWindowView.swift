@@ -62,7 +62,7 @@ private struct MeetingList: View {
         case starred
         var id: Self { self }
 
-        var title: String {
+        var title: LocalizedStringResource {
             switch self {
             case .all: return "All"
             case .recent: return "Recent"
@@ -198,7 +198,7 @@ private struct MeetingList: View {
     private var filterChips: some View {
         HStack(spacing: 6) {
             ForEach(Filter.allCases) { item in
-                Button(item.title) { filter = item }
+                Button { filter = item } label: { Text(item.title) }
                     .buttonStyle(FilterChipStyle(selected: filter == item))
                     .accessibilityAddTraits(filter == item ? .isSelected : [])
             }
@@ -317,7 +317,7 @@ private struct MeetingList: View {
         if !trimmed.isEmpty {
             emptyState(
                 "No results",
-                filter == .all ? "Nothing matches “\(trimmed)”." : "Nothing in \(filter.title) matches “\(trimmed)”.",
+                filter == .all ? "Nothing matches “\(trimmed)”." : "Nothing in \(String(localized: filter.title)) matches “\(trimmed)”.",
                 systemImage: "magnifyingglass",
                 action: ("Clear search", { query = "" })
             )

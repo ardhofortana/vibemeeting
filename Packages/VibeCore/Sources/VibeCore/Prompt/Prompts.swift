@@ -94,16 +94,4 @@ public enum Prompts {
 
     public static let emptyAboutMe = "No profile was provided."
     public static let emptyContext = "No meeting context was provided."
-
-    /// Placeholder outline for the empty About me field in Settings.
-    public static let aboutMePlaceholder = """
-    Name:
-    What I do:
-    Who I usually meet:
-    How I want to come across:
-    Facts replies may use:
-    Things I never say:
-
-    Write it in any language.
-    """
 }

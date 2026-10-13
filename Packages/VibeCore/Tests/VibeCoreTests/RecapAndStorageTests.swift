@@ -311,7 +311,6 @@ final class SessionStoreTests: XCTestCase {
         let preset = StylePreset(name: "Custom", instructions: "x", minSentences: 0, maxSentences: -1)
         XCTAssertEqual(preset.minSentences, 1)
         XCTAssertEqual(preset.maxSentences, 1)
-        XCTAssertEqual(preset.lengthDescription, "1 sentence")
         XCTAssertEqual(StylePreset.builtIns.count, 6)
         XCTAssertEqual(Set(StylePreset.builtIns.map(\.id)).count, 6)
     }

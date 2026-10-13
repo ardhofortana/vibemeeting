@@ -24,12 +24,6 @@ public struct StylePreset: Identifiable, Codable, Hashable, Sendable {
         self.maxSentences = max(self.minSentences, maxSentences)
         self.isBuiltIn = isBuiltIn
     }
-
-    public var lengthDescription: String {
-        minSentences == maxSentences
-            ? "\(minSentences) sentence\(minSentences == 1 ? "" : "s")"
-            : "\(minSentences)–\(maxSentences) sentences"
-    }
 }
 
 extension StylePreset {
