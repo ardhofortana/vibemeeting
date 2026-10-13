@@ -91,7 +91,8 @@ public enum ScriptText {
     }
 
     /// Index just past the first sentence terminator that is followed by
-    /// whitespace or the end of the text. Decimals like "2.5" don't count.
+    /// whitespace or the end of the text. Decimals like "2.5" don't count, and
+    /// neither does a spoken pause like "so... it's" unless it ends the text.
     static func firstSentenceEnd(in text: String) -> String.Index? {
         var index = text.startIndex
         while index < text.endIndex {
@@ -107,7 +108,9 @@ public enum ScriptText {
                     // Only a real end if the terminator closes the whole text.
                     return end
                 }
-                if text[end].isWhitespace {
+                let marks = text[index..<end].prefix { ".!?".contains($0) }
+                let isPause = marks.count > 1 && marks.allSatisfy { $0 == "." }
+                if text[end].isWhitespace, !isPause {
                     return end
                 }
                 index = end

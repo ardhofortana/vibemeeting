@@ -248,9 +248,9 @@ public struct ReplyPromptBuilder: Sendable {
             switch ask.variant {
             case .shorter:
                 let limit = shorterSentenceLimit(previous: previous, preset: preset)
-                parts.append("Rewrite the previous script shorter, in at most \(limit) sentence\(limit == 1 ? "" : "s"). Keep its main point, any numbers, and any [confirm number] marker.")
+                parts.append("Rewrite the previous script shorter, in at most \(limit) sentence\(limit == 1 ? "" : "s"). Keep its main point, any numbers, any [confirm number] marker, and the natural way it's spoken: trim it, don't polish it into a summary.")
             case .regenerate:
-                parts.append("Write a new version with a different angle or wording. Don't reuse its first sentence.")
+                parts.append("Write a new version with a different angle or wording. Don't reuse its first sentence or the way it opens.")
             case .fresh:
                 parts.append("Write the script now.")
             }

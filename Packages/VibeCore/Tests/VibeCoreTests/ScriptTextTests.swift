@@ -45,6 +45,16 @@ final class ScriptTextTests: XCTestCase {
         XCTAssertEqual(rest, "")
     }
 
+    func testSpokenPauseStaysInItsSentence() {
+        let text = "Yeah, so... the build is $2,400 for milestone 2. Um, design is separate."
+        XCTAssertEqual(ScriptText.splitFirstSentence(text).first, "Yeah, so... the build is $2,400 for milestone 2.")
+        XCTAssertEqual(ScriptText.sentences(in: "Hmm... I'm not sure. We could... well, let's lock the scope first.").count, 2)
+        XCTAssertEqual(ScriptText.sentences(in: "Could we...? Maybe. Wait!! Okay.").count, 4)
+        // A pause that ends the text (trailing off, or still streaming) closes it.
+        XCTAssertEqual(ScriptText.splitFirstSentence("Yeah, so...").first, "Yeah, so...")
+        XCTAssertEqual(ScriptText.sentences(in: "I thought maybe we could...").count, 1)
+    }
+
     func testConfirmMarkerStaysWithItsSentence() {
         let text = "Let me confirm the exact figure and send it today. [confirm number] First, can we lock the scope?"
         let (first, rest) = ScriptText.splitFirstSentence(text)
@@ -60,6 +70,16 @@ final class ScriptTextTests: XCTestCase {
     func testSanitizeRemovesForbiddenFormatting() {
         let raw = "\"**Sure** — we can do that.\n- It takes two weeks – roughly.\"\n"
         XCTAssertEqual(ScriptText.sanitize(raw), "Sure, we can do that. It takes two weeks, roughly.")
+    }
+
+    func testSanitizeKeepsSpokenPausesAndTurnsDashedFalseStartsIntoCommas() {
+        XCTAssertEqual(ScriptText.sanitize("Well... I, I think so."), "Well... I, I think so.")
+        XCTAssertEqual(ScriptText.sanitize("I was— I mean, we were close."), "I was, I mean, we were close.")
+    }
+
+    func testSpokenQuestionsWithLeadIns() {
+        XCTAssertEqual(ScriptText.questions(from: "So, who else needs to sign off on this?\nAnd, um... is the budget already set?", final: true),
+                       ["So, who else needs to sign off on this?", "And, um... is the budget already set?"])
     }
 
     func testSanitizeKeepsRanges() {

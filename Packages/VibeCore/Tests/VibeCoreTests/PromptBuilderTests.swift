@@ -162,6 +162,72 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertFalse(Prompts.replyRules.contains("only as background"))
     }
 
+    func testRulesAskForNaturalSpeechThatStillAnswers() throws {
+        let rules = Prompts.replyRules
+        XCTAssertTrue(rules.contains("thinking as they go"))
+        XCTAssertTrue(rules.contains("A few per reply at most, sometimes none."))
+        XCTAssertTrue(rules.contains("never on a pattern"))
+        XCTAssertTrue(rules.contains("they talk smoothly and with confidence"))
+        XCTAssertTrue(rules.contains("Natural is not vague."))
+        XCTAssertTrue(rules.contains("plain enough for a non-native listener"))
+        XCTAssertTrue(rules.contains("Mark pauses, breaks and false starts with \"...\" or a comma"))
+        XCTAssertTrue(rules.contains("never as a sentence of its own, and that sentence must still carry the point"))
+        XCTAssertFalse(rules.contains("—"), "sanitize turns dashes into commas, so the rules never show one")
+
+        // Everything else still holds.
+        XCTAssertTrue(rules.contains("never sound like AI-written text"))
+        XCTAssertTrue(rules.contains("Plain text only"))
+        XCTAssertTrue(rules.contains("Put the most useful sentence first"))
+        XCTAssertTrue(rules.contains("Never invent, estimate or round one."))
+        XCTAssertTrue(rules.contains("put [confirm number] right after that sentence"))
+        XCTAssertTrue(rules.contains("it wins over the meeting goal and the reply style"))
+        XCTAssertTrue(rules.contains("misheard words"))
+        XCTAssertTrue(rules.hasSuffix("Output only the words to say, with nothing before or after them."))
+
+        // The holding line example is spoken, survives sanitize and stays one bold sentence with its marker.
+        let range = try XCTUnwrap(rules.range(of: #"(?<=for example: ").+?(?="\))"#, options: .regularExpression))
+        let holding = String(rules[range])
+        XCTAssertTrue(holding.contains("..."))
+        let script = holding + " [confirm number] Can we lock the scope first?"
+        XCTAssertEqual(ScriptText.sanitize(script), script)
+        XCTAssertEqual(ScriptText.splitFirstSentence(script).first, holding + " [confirm number]")
+    }
+
+    func testQuestionsAreAskedTheWayPeopleTalk() {
+        let task = Prompts.questionsTask
+        XCTAssertTrue(task.contains("the way the user would actually ask it out loud"))
+        XCTAssertTrue(task.contains("Most questions go straight in."))
+        XCTAssertTrue(task.contains("never on every line"))
+        XCTAssertTrue(task.contains("One question per line and nothing else: no numbering, no bullets, no intro."))
+    }
+
+    func testBuiltInStylesDescribeHowPeopleTalk() {
+        let builtIns = StylePreset.builtIns
+        XCTAssertEqual(builtIns.map(\.id), ["builtin.friendly-pro", "builtin.consultant", "builtin.negotiator", "builtin.tech-explainer", "builtin.short-sweet", "builtin.diplomatic"])
+        XCTAssertEqual(builtIns.map(\.name), ["Friendly Pro", "Consultant", "Negotiator", "Tech Explainer", "Short & Sweet", "Diplomatic"])
+        XCTAssertEqual(builtIns.map(\.lengthDescription), ["2–4 sentences", "3–5 sentences", "2–4 sentences", "3–5 sentences", "1–2 sentences", "2–4 sentences"])
+        for preset in builtIns {
+            XCTAssertTrue(preset.isBuiltIn)
+            // The first sentence is the one-line description in the New meeting window.
+            let (summary, rest) = ScriptText.splitFirstSentence(preset.instructions)
+            XCTAssertLessThanOrEqual(summary.count, 110, preset.name)
+            XCTAssertTrue(summary.hasSuffix("."), preset.name)
+            XCTAssertFalse(summary.contains("\""), preset.name)
+            XCTAssertFalse(rest.isEmpty, "\(preset.name) goes on to say how that person talks")
+            XCTAssertFalse(preset.instructions.contains("\n"), preset.name)
+            XCTAssertFalse(preset.instructions.contains("—"), preset.name)
+        }
+        XCTAssertTrue(builtIns[1].instructions.contains("always lands a clear recommendation"))
+        XCTAssertTrue(builtIns[2].instructions.contains("Ties any change in price to a change in scope"))
+        XCTAssertTrue(builtIns[3].instructions.contains("avoids jargon unless the client used it first"))
+        XCTAssertTrue(builtIns[4].instructions.contains("no recap of what they said"))
+        XCTAssertTrue(builtIns[5].instructions.contains("soft, not vague"))
+
+        let style = ReplyPromptBuilder.styleText(preset: builtIns[4], meetingInstructions: "")
+        XCTAssertTrue(style.contains(builtIns[4].instructions))
+        XCTAssertTrue(style.contains("Length: 1 to 2 sentences."))
+    }
+
     func testEncodingIsDeterministic() throws {
         let builder = ReplyPromptBuilder(model: .haiku55)
         XCTAssertEqual(try builder.request(meeting: meeting, ask: ask()).encoded(), try builder.request(meeting: meeting, ask: ask()).encoded())
@@ -210,15 +276,19 @@ final class PromptBuilderTests: XCTestCase {
         text = ReplyPromptBuilder.askText(request, preset: .friendlyPro)
         XCTAssertTrue(text.contains("<previous_script>\nOne. Two. Three. Four.\n</previous_script>"))
         XCTAssertTrue(text.contains("at most 2 sentences"))
+        XCTAssertTrue(text.contains("the natural way it's spoken"))
 
         request.variant = .regenerate
         text = ReplyPromptBuilder.askText(request, preset: .friendlyPro)
         XCTAssertTrue(text.contains("different angle"))
+        XCTAssertTrue(text.contains("Don't reuse its first sentence or the way it opens."))
     }
 
     func testShorterLimitNeverBelowOne() {
         XCTAssertEqual(ReplyPromptBuilder.shorterSentenceLimit(previous: "Just one.", preset: .friendlyPro), 1)
         XCTAssertEqual(ReplyPromptBuilder.shorterSentenceLimit(previous: "A. B. C. D. E.", preset: StylePreset.builtIns[1]), 3)
+        // Spoken pauses aren't sentence ends.
+        XCTAssertEqual(ReplyPromptBuilder.shorterSentenceLimit(previous: "Um... so it's two weeks. I mean... maybe less.", preset: .friendlyPro), 1)
     }
 
     func testLiveTargetAndYouTarget() {
