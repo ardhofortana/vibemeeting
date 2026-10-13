@@ -34,7 +34,9 @@ for tool in yt-dlp ffmpeg uv; do
 done
 command -v yap >/dev/null 2>&1 || brew install finnvoor/tools/yap
 export PATH="$HOME/.local/bin:$PATH"
-command -v parakeet-mlx >/dev/null 2>&1 || uv tool install parakeet-mlx -U
+# MLX ships wheels for released Pythons only, so pin one rather than the
+# newest Homebrew Python (uv downloads it if needed).
+command -v parakeet-mlx >/dev/null 2>&1 || uv tool install parakeet-mlx -U --python 3.12
 
 id="$(yt-dlp --get-id "$url" | head -n 1)"
 dir="$HOME/Desktop/asr-test/$id"
