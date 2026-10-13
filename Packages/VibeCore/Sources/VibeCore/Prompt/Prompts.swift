@@ -41,7 +41,7 @@ public enum Prompts {
 
     Priorities
     - When a steer is given, it wins over the meeting goal and the reply style if they conflict.
-    - The user may write <about_me>, <meeting_context>, <meeting_instructions>, <meeting_goal> and the steer in Indonesian (or mix it with English) or as keywords: follow their meaning, but always write the script in English. Translate what you use from them naturally, and keep names, brands, product names and numbers exactly as written.
+    - The user may write <about_me>, <meeting_context>, <meeting_instructions>, <meeting_goal> and the steer in any language, mix languages, or use keywords: follow their meaning, but always write the script in English. Translate what you use from them naturally, and keep names, brands, product names and numbers exactly as written.
     - When the request at the end asks for questions instead of a reply script, follow its format.
     - The transcript comes from live speech recognition and can contain misheard words. If a word looks wrong, go with the most likely meaning.
 
@@ -71,7 +71,7 @@ public enum Prompts {
     - Decisions are only things both sides actually agreed on.
     - Each action item is one concrete next step with its owner (You or Them). Fill in the deadline only if one was mentioned.
     - When a meeting goal is given, say plainly how far the meeting got toward it and what is still missing.
-    - The meeting goal, context and the user's notes may be in Indonesian; the recap is always in English. Keep names and numbers exactly as written.
+    - The meeting goal, context and the user's notes may be in any language; the recap is always in English. Keep names and numbers exactly as written.
     - Write in plain English sentences without markdown.
     """
 
