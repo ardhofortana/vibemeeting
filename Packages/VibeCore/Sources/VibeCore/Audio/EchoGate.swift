@@ -14,20 +14,24 @@ import Foundation
 /// they share, then:
 /// 1. Coupling. Bleed reaches the mic with a fixed delay and a fixed loss, so
 ///    at the right delay the mic's level follows the reference's level dB for
-///    dB. Every 0.1 s the gate searches the delays for the best correlation of
-///    the levels over the last 1.5 s, counting only bins where the reference
-///    is active (above `activeFloorDB` and well above its own noise floor). A
-///    window confirms a coupling only when that correlation is strong, the mic
-///    tracks the reference with unit slope (mic minus reference barely moves
-///    while the reference does), and the mic is quiet where the reference has
+///    dB. Every 0.1 s the gate searches the delays (up to 0.6 s) for the best
+///    correlation of the levels over the last 1.5 s whose reference has
+///    arrived, counting only bins where the reference is active (above
+///    `activeFloorDB` and well above its own noise floor). A window confirms a
+///    coupling only when that correlation is strong, the mic tracks the
+///    reference close to dB for dB (mic minus reference barely moves while the
+///    reference does; loud speakers and a hot mic flatten the loudest sounds a
+///    little, which is allowed), and the mic is quiet where the reference has
 ///    been quiet. Two voices can line up by chance for a second or so; they
 ///    don't keep doing it. So a new coupling arms the gate only when a later
 ///    window, on new data, finds it again at the same delay and gain (about
 ///    2.5 s of the other side talking; 3 s or so with heavy reverb). In
-///    simulation, a mic that only hears the user never coupled. The mic can't
-///    hear the speakers before the call audio is captured, so a best match
-///    with the mic ahead of the reference (the call audio carrying the mic's
-///    own sound) confirms nothing.
+///    simulation (headphones with turn-taking, the user talking over the other
+///    side, short words in its monologues: 4.4 hours), a mic that only hears
+///    the user never coupled: chance matches passed every check of a window
+///    now and then, but were never found again on new data. The mic can't hear the speakers before the call audio
+///    is captured, so a best match with the mic ahead of the reference (the
+///    call audio carrying the mic's own sound) confirms nothing.
 /// 2. Gate. While a coupling is fresh, a mic bin is bleed when the reference was
 ///    active at that delay and the mic is no louder than the predicted bleed
 ///    plus `doubleTalkMarginDB`. Anything louder is the user talking over the
@@ -58,6 +62,10 @@ import Foundation
 /// next to the user's syllables while both talk.
 ///
 /// Feed the reference before the mic audio it overlaps: see `process`.
+/// `stats` says why the search found nothing (`Stats.searches`), shows the
+/// best match of the last 10 s or so (`Stats.bestRecent`) and how far the
+/// reference trails the mic, so a report from the field shows which check
+/// held the gate back.
 ///
 /// Thread safe: an `NSLock` guards all state, so the reference and the mic can
 /// arrive on different threads. `process` does no allocation and no logging.
@@ -72,7 +80,8 @@ public final class EchoGate: @unchecked Sendable {
         /// confirms nothing: a mic ahead of the reference means the call audio
         /// carries the mic's own sound (monitoring, a mic test), not bleed.
         public var minLag: Double
-        /// Largest delay searched.
+        /// Largest delay searched. Bluetooth and HDMI outputs, or a speaker
+        /// with its own processing, add a few hundred milliseconds.
         public var maxLag: Double
         /// Seconds of mic bins used to find the coupling.
         public var correlationWindow: Double
@@ -94,7 +103,7 @@ public final class EchoGate: @unchecked Sendable {
             binDuration: Double = 0.01,
             history: Double = 4,
             minLag: Double = 0,
-            maxLag: Double = 0.40,
+            maxLag: Double = 0.60,
             correlationWindow: Double = 1.5,
             minCorrelation: Double = 0.6,
             doubleTalkMarginDB: Double = 6,
@@ -129,6 +138,23 @@ public final class EchoGate: @unchecked Sendable {
         public var couplingGainDB: Double?
         /// Correlation of the levels when the coupling was last confirmed.
         public var correlation: Double?
+        /// Seconds of mic audio processed while the gate was armed whose
+        /// reference at the coupling delay hadn't arrived, so it couldn't be
+        /// gated. Grows steadily when the reference is fed too late.
+        public var unknownReferenceSeconds: Double
+        /// How far the newest reference trailed the end of each mic buffer when
+        /// that buffer was processed, in seconds (negative: ahead): recent
+        /// average and largest. More than the coupling delay means the mic is
+        /// processed before its reference arrives, so the bleed can be found
+        /// but not gated.
+        public var referenceTrailSeconds: Double
+        public var maxReferenceTrailSeconds: Double
+        /// What came of the coupling searches (one per 0.1 s of mic audio):
+        /// which check stopped them, or how many confirmed a coupling.
+        public var searches: Searches
+        /// The search with the highest correlation in the last 5 to 10 s of
+        /// mic audio, whatever became of it.
+        public var bestRecent: Probe?
 
         public init(
             processedSeconds: Double = 0,
@@ -136,7 +162,12 @@ public final class EchoGate: @unchecked Sendable {
             isCoupled: Bool = false,
             lagSeconds: Double? = nil,
             couplingGainDB: Double? = nil,
-            correlation: Double? = nil
+            correlation: Double? = nil,
+            unknownReferenceSeconds: Double = 0,
+            referenceTrailSeconds: Double = 0,
+            maxReferenceTrailSeconds: Double = 0,
+            searches: Searches = Searches(),
+            bestRecent: Probe? = nil
         ) {
             self.processedSeconds = processedSeconds
             self.gatedSeconds = gatedSeconds
@@ -144,6 +175,114 @@ public final class EchoGate: @unchecked Sendable {
             self.lagSeconds = lagSeconds
             self.couplingGainDB = couplingGainDB
             self.correlation = correlation
+            self.unknownReferenceSeconds = unknownReferenceSeconds
+            self.referenceTrailSeconds = referenceTrailSeconds
+            self.maxReferenceTrailSeconds = maxReferenceTrailSeconds
+            self.searches = searches
+            self.bestRecent = bestRecent
+        }
+    }
+
+    /// Coupling searches by outcome. Each search counts once, under the first
+    /// check its best delay failed (or `pending` / `confirmed`).
+    public struct Searches: Equatable, Sendable {
+        public var total = 0
+        /// The mic window had gaps.
+        public var micGaps = 0
+        /// No delay had enough reference bins known (call audio late or missing).
+        public var referenceUnknown = 0
+        /// The other side talked too little in the window.
+        public var referenceQuiet = 0
+        /// The other side's level (or the mic's) was too steady to match.
+        public var referenceFlat = 0
+        /// The best match had the mic ahead of the reference.
+        public var micLeads = 0
+        /// The best correlation stayed below `minCorrelation`.
+        public var weakCorrelation = 0
+        /// The mic didn't follow the reference dB for dB.
+        public var slope = 0
+        /// Too few bins where the reference had been silent to check the mic there.
+        public var fewQuietBins = 0
+        /// The mic wasn't quiet where the reference had been silent.
+        public var notQuiet = 0
+        /// Passed every check, waiting to be seen again on new data.
+        public var pending = 0
+        /// Confirmed a coupling (armed or refreshed it).
+        public var confirmed = 0
+        /// Not an outcome: searches whose best delay was the longest searched,
+        /// so the real delay may lie beyond `maxLag`.
+        public var atMaxLag = 0
+
+        public init() {}
+
+        /// "120 searches: confirmed 40, few quiet bins 50, slope 30": the
+        /// outcomes that occurred, most frequent first.
+        public var summary: String {
+            let outcomes = [
+                ("confirmed", confirmed), ("pending", pending), ("slope", slope),
+                ("few quiet bins", fewQuietBins), ("not quiet", notQuiet), ("weak correlation", weakCorrelation),
+                ("mic leads", micLeads), ("reference quiet", referenceQuiet), ("reference flat", referenceFlat),
+                ("reference unknown", referenceUnknown), ("mic gaps", micGaps),
+            ]
+            var parts = outcomes.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.map { "\($0.0) \($0.1)" }
+            if atMaxLag > 0 { parts.append("best at the longest delay \(atMaxLag)") }
+            return "\(total) searches" + (parts.isEmpty ? "" : ": " + parts.joined(separator: ", "))
+        }
+    }
+
+    /// One search's best delay and what the checks made of it.
+    public struct Probe: Equatable, Sendable {
+        public enum Outcome: String, Equatable, Sendable {
+            case micLeads, weakCorrelation, slope, fewQuietBins, notQuiet, pending, confirmed
+        }
+
+        public var lagSeconds: Double
+        public var correlation: Double
+        /// Median of mic minus reference over the active bins.
+        public var gainDB: Double
+        /// Unit-slope check: lower spread of mic minus reference over the
+        /// reference's own spread (passes up to 0.8).
+        public var slopeRatio: Double
+        /// Quiet-bin check: bins where the reference had been silent, and the
+        /// share of them where the mic was quiet enough (passes from 0.8).
+        public var quietBins: Int
+        public var quietShare: Double
+        /// Share of the window with both levels known at this delay.
+        public var knownShare: Double
+        /// Share of the window where the reference was active at this delay.
+        public var activeShare: Double
+        public var outcome: Outcome
+        /// Seconds of mic audio since the window ended.
+        public var age: Double
+
+        public init(
+            lagSeconds: Double, correlation: Double, gainDB: Double, slopeRatio: Double,
+            quietBins: Int, quietShare: Double, knownShare: Double, activeShare: Double,
+            outcome: Outcome, age: Double
+        ) {
+            self.lagSeconds = lagSeconds
+            self.correlation = correlation
+            self.gainDB = gainDB
+            self.slopeRatio = slopeRatio
+            self.quietBins = quietBins
+            self.quietShare = quietShare
+            self.knownShare = knownShare
+            self.activeShare = activeShare
+            self.outcome = outcome
+            self.age = age
+        }
+
+        /// "lag 50 ms, r 0.92, -6.7 dB, slope 0.63, quiet bins 0, known 100%,
+        /// active 97%: fewQuietBins, 3.3 s ago".
+        public var summary: String {
+            func number(_ value: Double, _ format: String) -> String {
+                value.isFinite ? String(format: format, value) : "–"
+            }
+            return "lag \(number(lagSeconds * 1000, "%.0f")) ms, r \(number(correlation, "%.2f")), "
+                + "\(number(gainDB, "%.1f")) dB, slope \(number(slopeRatio, "%.2f")), "
+                + "quiet bins \(quietBins)" + (quietShare.isFinite ? " (\(number(quietShare * 100, "%.0f"))% quiet)" : "")
+                + ", known \(number(knownShare * 100, "%.0f"))%, active \(number(activeShare * 100, "%.0f"))%"
+                + ": \(outcome.rawValue), \(number(age, "%.1f")) s ago"
         }
     }
 
@@ -154,8 +293,16 @@ public final class EchoGate: @unchecked Sendable {
     static let minReferenceSpreadDB = 3.0
     /// Unit-slope check: the lower spread of mic minus reference (median minus
     /// 20th percentile) must stay below this share of the reference's own
-    /// spread (median absolute deviation).
-    static let maxResidualSpreadRatio = 0.5
+    /// spread (median absolute deviation). Loud speakers limit their loudest
+    /// sounds, a hot mic clips them and the speakers color some sounds more
+    /// than others, so real bleed falls a few dB short of a unit slope on
+    /// some bins: in simulation (limiters of 2:1 to 6:1, ±3 to 5 dB of
+    /// coloring, a reverberant tail as loud as the direct sound) it measured
+    /// 0.5 to 0.9, median 0.65, and 0.5 rejected nearly every window. Chance
+    /// matches of two voices (correlation 0.6 or more) measured 0.8 to 10,
+    /// median 2.5 to 3; the few that pass every check are never found again
+    /// on new data, which a coupling needs.
+    static let maxResidualSpreadRatio = 0.8
     /// Share of the window that must have both levels, and share of those where
     /// the reference must be active.
     static let minKnownShare = 0.8
@@ -234,6 +381,11 @@ public final class EchoGate: @unchecked Sendable {
     static let hangoverMarginDB = 1.0
     /// Seconds between coupling searches.
     static let evaluationInterval = 0.1
+    /// Diagnostics: `Stats.bestRecent` is the best probe of the current and
+    /// the previous block of this many seconds; the reference trail is
+    /// smoothed with this weight per mic buffer.
+    static let probeBlock = 5.0
+    static let trailSmoothing = 0.05
     /// Gain ramp length in seconds, kept inside gated bins.
     static let rampDuration = 0.002
     /// A bin needs this share of its samples before its level is trusted.
@@ -269,6 +421,22 @@ public final class EchoGate: @unchecked Sendable {
         var gainDB: Double
         var correlation: Double
         var isStrong: Bool
+    }
+
+    /// The checks beyond the correlation, measured at one delay.
+    private struct Measurement {
+        var gainDB: Double
+        var slopeRatio: Double
+        var quietBins: Int
+        var quietShare: Double
+        /// The first check that failed, nil when all passed.
+        var failure: Probe.Outcome?
+    }
+
+    /// A probe and the mic bin its window ended at.
+    private struct ProbeRecord {
+        var probe: Probe
+        var endBin: Int
     }
 
     private enum Review {
@@ -320,7 +488,9 @@ public final class EchoGate: @unchecked Sendable {
     /// two, and one stray sighting must not erase the evidence gathered so far.
     private var candidates: [Candidate] = []
     private let candidateExpiryBins: Int
+    /// End of the window searched last, and the newest complete mic bin then.
     private var lastEvaluatedBin: Int?
+    private var lastSearchMicBin: Int?
     private var newestMicBin: Int?
     /// Latest mic bin that carried the user for sure, for the hangover.
     private var lastUserBin: Int?
@@ -328,6 +498,14 @@ public final class EchoGate: @unchecked Sendable {
     private var processedSeconds = 0.0
     private var gatedSeconds = 0.0
     private var unknownSeconds = 0.0
+    private var searches = Searches()
+    /// Best probes of the current and the previous `probeBlock`.
+    private var currentBest: ProbeRecord?
+    private var previousBest: ProbeRecord?
+    private var probeBlockStart: Int?
+    private var referenceTrail = 0.0
+    private var maxReferenceTrail = 0.0
+    private var hasReferenceTrail = false
 
     // Scratch, allocated once.
     private let micLevels: UnsafeMutablePointer<Double>
@@ -346,7 +524,7 @@ public final class EchoGate: @unchecked Sendable {
         binDuration = bin
         func bins(_ seconds: Double) -> Int { Int((seconds / bin).rounded()) }
         let lagA = bins(finite(configuration.minLag, 0, -2...2))
-        let lagB = bins(finite(configuration.maxLag, 0.40, -2...2))
+        let lagB = bins(finite(configuration.maxLag, 0.60, -2...2))
         minLagBins = min(lagA, lagB)
         maxLagBins = max(lagA, lagB)
         searchMinLagBins = minLagBins - max(1, bins(Self.leadGuard))
@@ -433,8 +611,12 @@ public final class EchoGate: @unchecked Sendable {
             mic.reset()
             forgetCoupling()
             lastEvaluatedBin = nil
+            lastSearchMicBin = nil
             newestMicBin = nil
             rampGain = 1
+            currentBest = nil
+            previousBest = nil
+            probeBlockStart = nil
         }
         micSamplesPerBin = geometry.samplesPerBin
 
@@ -445,13 +627,26 @@ public final class EchoGate: @unchecked Sendable {
             lastBin = bin
         }
         newestMicBin = max(newestMicBin ?? lastBin, lastBin)
+        if let newestReference = reference.newest {
+            let trail = Double(lastBin - newestReference) * binDuration
+            referenceTrail = hasReferenceTrail ? referenceTrail + Self.trailSmoothing * (trail - referenceTrail) : trail
+            maxReferenceTrail = hasReferenceTrail ? max(maxReferenceTrail, trail) : trail
+            hasReferenceTrail = true
+        }
 
-        // 2. Coupling, over complete bins only.
-        let windowEnd = lastBin - 1
-        if let last = lastEvaluatedBin, windowEnd >= last, windowEnd - last < evaluationBins {
-            // Searched recently enough.
-        } else {
+        // 2. Coupling, every `evaluationInterval` of mic audio, over complete
+        // bins only, and only as far as the reference has arrived for every
+        // delay accepted: call audio that trails the mic would otherwise leave
+        // the newest mic bins unpaired, and short delays unsearched.
+        let micEnd = lastBin - 1
+        var windowEnd = micEnd
+        if let newestReference = reference.newest {
+            windowEnd = min(windowEnd, newestReference - 1 + minLagBins)
+        }
+        let searchedRecently = lastSearchMicBin.map { micEnd >= $0 && micEnd - $0 < evaluationBins } ?? false
+        if !searchedRecently, windowEnd != lastEvaluatedBin {
             let previous = lastEvaluatedBin
+            lastSearchMicBin = micEnd
             lastEvaluatedBin = windowEnd
             evaluateCoupling(through: windowEnd, since: previous)
         }
@@ -472,23 +667,27 @@ public final class EchoGate: @unchecked Sendable {
     public var stats: Stats {
         lock.lock()
         defer { lock.unlock() }
-        var stats = Stats(processedSeconds: processedSeconds, gatedSeconds: gatedSeconds)
+        var stats = Stats(
+            processedSeconds: processedSeconds,
+            gatedSeconds: gatedSeconds,
+            unknownReferenceSeconds: unknownSeconds,
+            referenceTrailSeconds: referenceTrail,
+            maxReferenceTrailSeconds: maxReferenceTrail,
+            searches: searches
+        )
         if let coupling {
             stats.isCoupled = newestMicBin.map { isFresh(coupling, at: $0) } ?? false
             stats.lagSeconds = Double(coupling.lagBins) * binDuration
             stats.couplingGainDB = coupling.gainDB
             stats.correlation = coupling.correlation
         }
+        var best = currentBest
+        if let previous = previousBest, previous.probe.correlation > best?.probe.correlation ?? -.infinity { best = previous }
+        if let best, let newest = newestMicBin {
+            stats.bestRecent = best.probe
+            stats.bestRecent?.age = Double(max(0, newest - best.endBin)) * binDuration
+        }
         return stats
-    }
-
-    /// Seconds of mic audio processed while the gate was armed whose reference
-    /// at the coupling delay hadn't arrived, so it couldn't be gated. Grows
-    /// steadily when the reference is fed too late (or stopped arriving).
-    var unknownReferenceSeconds: Double {
-        lock.lock()
-        defer { lock.unlock() }
-        return unknownSeconds
     }
 
     public func reset() {
@@ -499,11 +698,19 @@ public final class EchoGate: @unchecked Sendable {
         forgetCoupling()
         activeFloorDB = configuredFloorDB
         lastEvaluatedBin = nil
+        lastSearchMicBin = nil
         newestMicBin = nil
         rampGain = 1
         processedSeconds = 0
         gatedSeconds = 0
         unknownSeconds = 0
+        searches = Searches()
+        currentBest = nil
+        previousBest = nil
+        probeBlockStart = nil
+        referenceTrail = 0
+        maxReferenceTrail = 0
+        hasReferenceTrail = false
     }
 
     // MARK: Convenience
@@ -565,13 +772,17 @@ public final class EchoGate: @unchecked Sendable {
         let referenceFirst = first - maxLagBins
         let micMin = micMinCount
         let referenceMin = referenceMinCount
+        searches.total += 1
         var knownMic = 0
         for j in 0..<window {
             micLevels[j] = mic.level(first + j, minCount: micMin)
             if !micLevels[j].isNaN { knownMic += 1 }
         }
         let minKnown = Int((Double(window) * Self.minKnownShare).rounded(.up))
-        guard knownMic >= minKnown else { return }
+        guard knownMic >= minKnown else {
+            searches.micGaps += 1
+            return
+        }
         for k in 0..<referenceSpan {
             referenceLevels[k] = reference.level(referenceFirst + k, minCount: referenceMin)
         }
@@ -582,6 +793,10 @@ public final class EchoGate: @unchecked Sendable {
         let minSpread = Self.minReferenceSpreadDB * Self.minReferenceSpreadDB
         var bestCorrelation = -Double.infinity
         var bestLag = 0
+        var bestKnown = 0, bestActive = 0
+        // How far the best delay got: 0 reference unknown, 1 too little
+        // talk, 2 too flat, 3 correlated.
+        var stage = 0
         for lag in searchMinLagBins...maxLagBins {
             let offset = maxLagBins - lag
             var known = 0
@@ -599,28 +814,65 @@ public final class EchoGate: @unchecked Sendable {
                 syy += y * y
                 sxy += x * y
             }
-            guard known >= minKnown,
-                  n >= Double(known) * Self.minActiveShare,
-                  n >= Double(window) * Self.minActiveShare
-            else { continue }
+            guard known >= minKnown else { continue }
+            guard n >= Double(known) * Self.minActiveShare, n >= Double(window) * Self.minActiveShare else {
+                stage = max(stage, 1)
+                continue
+            }
             let mx = sx / n, my = sy / n
             let vx = sxx / n - mx * mx
             let vy = syy / n - my * my
-            guard vx >= minSpread, vy > 1e-9 else { continue }
+            guard vx >= minSpread, vy > 1e-9 else {
+                stage = max(stage, 2)
+                continue
+            }
+            stage = 3
             let r = (sxy / n - mx * my) / (vx * vy).squareRoot()
             if r > bestCorrelation {
                 bestCorrelation = r
                 bestLag = lag
+                bestKnown = known
+                bestActive = Int(n)
             }
         }
 
-        // A best match with the mic ahead of the reference is the call audio
-        // carrying the mic's own sound, never bleed: it confirms nothing.
         var refreshed = false
-        if bestLag >= minLagBins,
-           bestCorrelation >= configuration.minCorrelation,
-           let sighting = verify(lag: bestLag, correlation: bestCorrelation, window: window, floor: floor) {
-            refreshed = accept(sighting, end: end)
+        switch stage {
+        case 0: searches.referenceUnknown += 1
+        case 1: searches.referenceQuiet += 1
+        case 2: searches.referenceFlat += 1
+        default:
+            if bestLag >= maxLagBins - 1 { searches.atMaxLag += 1 }
+            let measured = measure(lag: bestLag, window: window, floor: floor)
+            // A best match with the mic ahead of the reference is the call
+            // audio carrying the mic's own sound, never bleed: it confirms nothing.
+            let outcome: Probe.Outcome
+            if bestLag < minLagBins {
+                outcome = .micLeads
+            } else if bestCorrelation < configuration.minCorrelation {
+                outcome = .weakCorrelation
+            } else if let failure = measured.failure {
+                outcome = failure
+            } else {
+                let isStrong = bestCorrelation >= Self.strongCorrelation
+                    && measured.slopeRatio <= Self.strongResidualSpreadRatio
+                let sighting = Sighting(lagBins: bestLag, gainDB: measured.gainDB, correlation: bestCorrelation, isStrong: isStrong)
+                refreshed = accept(sighting, end: end)
+                outcome = refreshed ? .confirmed : .pending
+            }
+            tally(outcome)
+            record(Probe(
+                lagSeconds: Double(bestLag) * binDuration,
+                correlation: bestCorrelation,
+                gainDB: measured.gainDB,
+                slopeRatio: measured.slopeRatio,
+                quietBins: measured.quietBins,
+                quietShare: measured.quietShare,
+                knownShare: Double(bestKnown) / Double(window),
+                activeShare: Double(bestActive) / Double(window),
+                outcome: outcome,
+                age: 0
+            ), end: end)
         }
         guard !refreshed, var current = coupling else { return }
 
@@ -707,17 +959,21 @@ public final class EchoGate: @unchecked Sendable {
         candidates.removeAll(keepingCapacity: true)
     }
 
-    /// Checks the coupling at `lag` beyond the correlation; nil when it fails:
+    /// Checks the coupling at `lag` beyond the correlation; `failure` names the
+    /// first check that fails, and every measure is filled in either way (for
+    /// `Stats.bestRecent`):
     /// - Unit slope: the mic follows the reference dB for dB, so mic minus
     ///   reference stays put while the reference moves. Only the lower side of
     ///   its spread counts: reverb, the user talking over the bleed and the
-    ///   mic's noise floor all add energy, but nothing makes the mic quieter
-    ///   than the bleed it carries.
+    ///   mic's noise floor all add energy. Only limiting, clipping and the
+    ///   speakers' coloring make the mic quieter than a unit slope predicts,
+    ///   and only by a few dB (`maxResidualSpreadRatio`).
     /// - Quiet when the reference is quiet: where the reference has been silent
     ///   for a while, the mic sits well below its level in the active bins.
     ///   Speech that merely happens to line up with the reference fails this.
     /// The gain is the median of mic minus reference over active bins.
-    private func verify(lag: Int, correlation: Double, window: Int, floor: Double) -> Sighting? {
+    private func measure(lag: Int, window: Int, floor: Double) -> Measurement {
+        var result = Measurement(gainDB: .nan, slopeRatio: .nan, quietBins: 0, quietShare: .nan, failure: .slope)
         let offset = maxLagBins - lag
         var n = 0
         for j in 0..<window {
@@ -728,13 +984,14 @@ public final class EchoGate: @unchecked Sendable {
             scratchB[n] = x
             n += 1
         }
-        guard n >= 3 else { return nil }
+        guard n >= 3 else { return result }
         let gain = Self.median(scratchA, n)
+        result.gainDB = gain
         let lowerSpread = gain - Self.select(scratchA, n, n / 5)
         let referenceSpread = Self.medianAbsoluteDeviation(scratchB, n, around: Self.median(scratchB, n))
-        guard referenceSpread > 0 else { return nil }
+        guard referenceSpread > 0 else { return result }
         let spreadRatio = lowerSpread / referenceSpread
-        guard spreadRatio <= Self.maxResidualSpreadRatio else { return nil }
+        result.slopeRatio = spreadRatio
 
         // The mic's level while the reference is active...
         var m = 0
@@ -763,9 +1020,45 @@ public final class EchoGate: @unchecked Sendable {
             quiet += 1
             if micLevels[j] <= activeMic - Self.quietMarginDB { quieter += 1 }
         }
-        guard quiet >= Self.minQuietBins, Double(quieter) >= Self.minQuietShare * Double(quiet) else { return nil }
-        let isStrong = correlation >= Self.strongCorrelation && spreadRatio <= Self.strongResidualSpreadRatio
-        return Sighting(lagBins: lag, gainDB: gain, correlation: correlation, isStrong: isStrong)
+        result.quietBins = quiet
+        result.quietShare = quiet > 0 ? Double(quieter) / Double(quiet) : .nan
+        if spreadRatio > Self.maxResidualSpreadRatio {
+            result.failure = .slope
+        } else if quiet < Self.minQuietBins {
+            result.failure = .fewQuietBins
+        } else if Double(quieter) < Self.minQuietShare * Double(quiet) {
+            result.failure = .notQuiet
+        } else {
+            result.failure = nil
+        }
+        return result
+    }
+
+    private func tally(_ outcome: Probe.Outcome) {
+        switch outcome {
+        case .micLeads: searches.micLeads += 1
+        case .weakCorrelation: searches.weakCorrelation += 1
+        case .slope: searches.slope += 1
+        case .fewQuietBins: searches.fewQuietBins += 1
+        case .notQuiet: searches.notQuiet += 1
+        case .pending: searches.pending += 1
+        case .confirmed: searches.confirmed += 1
+        }
+    }
+
+    /// Keeps the best probe of the current and the previous block.
+    private func record(_ probe: Probe, end: Int) {
+        let block = max(1, Int((Self.probeBlock / binDuration).rounded()))
+        if let start = probeBlockStart, end >= start, end - start < block {
+            // Same block.
+        } else {
+            previousBest = (probeBlockStart.map { end - $0 < 2 * block && end >= $0 } ?? false) ? currentBest : nil
+            currentBest = nil
+            probeBlockStart = end
+        }
+        if probe.correlation > currentBest?.probe.correlation ?? -.infinity {
+            currentBest = ProbeRecord(probe: probe, endBin: end)
+        }
     }
 
     /// Checks an unconfirmed coupling against the mic, over the bins where its

@@ -237,15 +237,13 @@ final class EchoGateTests: XCTestCase {
     /// bins pass untouched, and the gate counts them.
     func testLateReferenceIsNeverGatedButCounted() {
         let scene = Scene(them: .speech(seed: 11, from: 0.2, to: 20), user: nil)
-        let onTime = EchoGate()
-        _ = scene.run(seed: 1, gate: onTime)
-        XCTAssertLessThan(onTime.unknownReferenceSeconds, 0.1)
+        let onTime = scene.run(seed: 1)
+        XCTAssertLessThan(onTime.stats.unknownReferenceSeconds, 0.1)
 
-        let late = EchoGate()
-        let result = scene.run(seed: 1, feed: Feed(referenceLateness: 0.2), gate: late)
+        let result = scene.run(seed: 1, feed: Feed(referenceLateness: 0.2))
         XCTAssertTrue(result.stats.isCoupled)
         XCTAssertEqual(result.attenuatedCount, 0)
-        XCTAssertGreaterThan(late.unknownReferenceSeconds, 10)
+        XCTAssertGreaterThan(result.stats.unknownReferenceSeconds, 10)
     }
 
     /// The mic's clock steps back 2 s: the delay learned no longer holds, so
