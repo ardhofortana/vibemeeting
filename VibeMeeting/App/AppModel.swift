@@ -150,7 +150,9 @@ final class AppModel {
         await task.value
         if teardown == task { teardown = nil }
         guard thenRecap else { return }
-        windows.showMain()
+        // The save can take a few seconds: in front, but the keyboard stays
+        // with whatever app the user went to meanwhile.
+        windows.showMain(takeFocus: false)
         await generateRecap(for: session.id)
     }
 

@@ -15,8 +15,10 @@ final class WindowManager: NSObject, NSWindowDelegate {
         self.app = app
     }
 
-    func showMain() {
-        show(id: "main", title: "VibeMeeting", size: CGSize(width: 980, height: 680), minSize: CGSize(width: 760, height: 500), glass: true) {
+    /// `takeFocus` false shows it in front without taking the keyboard from
+    /// the app in use, for when it opens on its own (after a meeting is saved).
+    func showMain(takeFocus: Bool = true) {
+        show(id: "main", title: "VibeMeeting", size: CGSize(width: 980, height: 680), minSize: CGSize(width: 760, height: 500), glass: true, takeFocus: takeFocus) {
             MainWindowView()
         }
     }
@@ -64,12 +66,11 @@ final class WindowManager: NSObject, NSWindowDelegate {
         size: CGSize,
         minSize: CGSize,
         glass: Bool = false,
+        takeFocus: Bool = true,
         @ViewBuilder content: () -> Content
     ) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
         if let window = windows[id] {
-            window.makeKeyAndOrderFront(nil)
+            present(window, takeFocus: takeFocus)
             return
         }
         let chrome = WindowChromeModel()
@@ -90,6 +91,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
         window.setContentSize(size)
         window.contentMinSize = minSize
         window.isReleasedWhenClosed = false
+        // Opens on the Space the user is on, not the one it was last shown on.
+        window.collectionBehavior.insert(.moveToActiveSpace)
         window.delegate = self
         window.identifier = NSUserInterfaceItemIdentifier(id)
         if !window.setFrameUsingName(id) {
@@ -100,7 +103,51 @@ final class WindowManager: NSObject, NSWindowDelegate {
         if glass {
             chrome.update(from: window)
         }
+        present(window, takeFocus: takeFocus)
+    }
+
+    /// Brings `window` in front of every app's windows. VibeMeeting isn't the
+    /// active app when its menu bar menu is used, and since macOS 14
+    /// `NSApp.activate()` is only a request the system often declines for a menu
+    /// bar app, so windows opened behind the app in front (FB23508310).
+    private func present(_ window: NSWindow, takeFocus: Bool) {
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        // Dock icon first: activating before the switch leaves the other app's
+        // menus in the menu bar. windowWillClose switches back.
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+        raise(window, takeFocus: takeFocus)
+        // The menu closing and the switch to .regular settle over the next
+        // moments, and the first request can be declined: ask again until the
+        // window is key.
+        for delay in [100, 350] {
+            Task { [weak self, weak window] in
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard let self, let window, window.isVisible, !(NSApp.isActive && window.isKeyWindow) else { return }
+                self.raise(window, takeFocus: takeFocus)
+            }
+        }
+    }
+
+    private func raise(_ window: NSWindow, takeFocus: Bool) {
+        // Key first, so activation brings this window forward, not another of ours.
         window.makeKeyAndOrderFront(nil)
+        // In front of other apps' windows even if activation is declined.
+        window.orderFrontRegardless()
+        guard takeFocus else {
+            NSApp.activate()
+            return
+        }
+        // Take activation from the app in front, the non-deprecated way.
+        let me = NSRunningApplication.current
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != me.processIdentifier {
+            _ = me.activate(from: front, options: [])
+        }
+        // Deprecated since macOS 14 (Apple says the flag is ignored), but it is
+        // what still brings a menu bar app forward after a click in its menu
+        // (Electron, Rectangle and others ship it); a no-op once active.
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func windowWillClose(_ notification: Notification) {
