@@ -12,25 +12,42 @@ public struct CallLocales: Equatable, Sendable {
     public let speech: [String]
     /// The call languages the Dictation model transcribes.
     public let dictationOnly: Set<String>
+    /// Dictation locales for which the speech model named a different language
+    /// as its equivalent. That answer is ignored and they stay with Dictation;
+    /// kept for the diagnostics report.
+    public let otherLanguageEquivalents: [String: String]
 
-    /// `speechEquivalents` are Dictation locales the speech model accepts under
-    /// another identifier; they're left out so no language is listed twice.
-    public init(speech: [String], dictation: [String], speechEquivalents: Set<String> = []) {
+    /// `speechEquivalents` maps Dictation locales to the locale the speech model
+    /// accepts for them under another identifier. Those in the same language are
+    /// left out, so no language is listed twice; an equivalent in another
+    /// language never counts.
+    public init(speech: [String], dictation: [String], speechEquivalents: [String: String] = [:]) {
         var all: [String] = []
         var seen: Set<String> = []
         for identifier in speech.map(MeetingLanguage.normalized) where seen.insert(identifier).inserted {
             all.append(identifier)
         }
         self.speech = all
-        let equivalents = Set(speechEquivalents.map(MeetingLanguage.normalized))
+        var sameLanguage: Set<String> = []
+        var otherLanguage: [String: String] = [:]
+        for (dictationLocale, speechLocale) in speechEquivalents {
+            let dictationLocale = MeetingLanguage.normalized(dictationLocale)
+            let speechLocale = MeetingLanguage.normalized(speechLocale)
+            if MeetingLanguage.isSameLanguage(dictationLocale, speechLocale) {
+                sameLanguage.insert(dictationLocale)
+            } else {
+                otherLanguage[dictationLocale] = speechLocale
+            }
+        }
         var dictationOnly: Set<String> = []
         for identifier in dictation.map(MeetingLanguage.normalized)
-        where !equivalents.contains(identifier) && seen.insert(identifier).inserted {
+        where !sameLanguage.contains(identifier) && seen.insert(identifier).inserted {
             all.append(identifier)
             dictationOnly.insert(identifier)
         }
         self.all = all
         self.dictationOnly = dictationOnly
+        self.otherLanguageEquivalents = otherLanguage
     }
 
     /// The call languages whose model is on this Mac. Each counts only with the

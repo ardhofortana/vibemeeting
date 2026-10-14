@@ -76,12 +76,17 @@ final class LanguageTests: XCTestCase {
         let locales = CallLocales(
             speech: ["en-US", "en-GB", "de-DE", "en-US"],
             dictation: ["en_US", "de-DE", "de-AT", "id-ID", "ms-MY", "id-ID"],
-            speechEquivalents: ["de-AT"]
+            speechEquivalents: ["de-AT": "de-DE", "id-ID": "en-US"]
         )
-        // Each language once; one the speech model takes under another identifier isn't added.
+        // Each language once; one the speech model takes under another identifier
+        // isn't added, but an "equivalent" in another language never counts.
         XCTAssertEqual(locales.all, ["en-US", "en-GB", "de-DE", "id-ID", "ms-MY"])
         XCTAssertEqual(locales.speech, ["en-US", "en-GB", "de-DE"])
         XCTAssertEqual(locales.dictationOnly, ["id-ID", "ms-MY"])
+        XCTAssertEqual(locales.otherLanguageEquivalents, ["id-ID": "en-US"])
+        XCTAssertTrue(MeetingLanguage.isSameLanguage("de-AT", "de_DE"))
+        XCTAssertFalse(MeetingLanguage.isSameLanguage("id-ID", "en-US"))
+        XCTAssertFalse(MeetingLanguage.isSameLanguage("", "en-US"))
 
         // Automatic stays on the speech model: an English only Dictation has
         // (such as English (Indonesia)) gives the usual form.

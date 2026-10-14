@@ -105,7 +105,10 @@ final class LiveTranscriber: @unchecked Sendable {
     /// accurate model, else DictationTranscriber. Never another language.
     /// SpeechLanguages lists the call languages by the same rule.
     private static func makeTranscriber(for requested: Locale) async throws -> (recognizer: Recognizer, locale: Locale) {
-        if SpeechTranscriber.isAvailable, let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested) {
+        // The speech model's equivalent counts only in the same language.
+        if SpeechTranscriber.isAvailable,
+           let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested),
+           MeetingLanguage.isSameLanguage(locale.identifier(.bcp47), requested.identifier(.bcp47)) {
             let transcriber = SpeechTranscriber(
                 locale: locale,
                 transcriptionOptions: [],

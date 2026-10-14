@@ -62,6 +62,13 @@ public struct MeetingLanguage: Codable, Hashable, Sendable {
         languageCode(of: identifier) == "en"
     }
 
+    /// Whether two identifiers name the same language, whatever the region
+    /// ("de-AT" and "de-DE" do; "id-ID" and "en-US" don't).
+    public static func isSameLanguage(_ first: String, _ second: String) -> Bool {
+        guard let language = languageCode(of: first) else { return false }
+        return language == languageCode(of: second)
+    }
+
     /// The language's name in English, for prompts: "German (Germany)". The
     /// identifier itself when the name isn't known.
     public static func englishName(of identifier: String) -> String {

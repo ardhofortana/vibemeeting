@@ -41,7 +41,8 @@ final class SpeechLanguages {
 
     /// Every call language, and which ones DictationTranscriber hears, by the
     /// rule `LiveTranscriber` picks a model with: SpeechTranscriber for every
-    /// locale it accepts, listed or equivalent, and DictationTranscriber for the rest.
+    /// locale it accepts in the same language, listed or equivalent, and
+    /// DictationTranscriber for the rest.
     static func callLocales() async -> CallLocales {
         if let cached = cachedCallLocales { return cached }
         let speechAvailable = SpeechTranscriber.isAvailable
@@ -53,16 +54,17 @@ final class SpeechLanguages {
         let speechIdentifiers = Set(speech.map { $0.identifier(.bcp47) })
         let candidates = speechAvailable ? dictation.filter { !speechIdentifiers.contains($0.identifier(.bcp47)) } : []
         // One question to the speech service per locale, asked side by side.
-        let equivalents = await withTaskGroup(of: String?.self, returning: Set<String>.self) { group in
+        // CallLocales ignores an equivalent in another language.
+        let equivalents = await withTaskGroup(of: (String, String)?.self, returning: [String: String].self) { group in
             for locale in candidates {
                 group.addTask {
-                    let equivalent = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
-                    return equivalent == nil ? nil : locale.identifier(.bcp47)
+                    guard let equivalent = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
+                    return (locale.identifier(.bcp47), equivalent.identifier(.bcp47))
                 }
             }
-            var found: Set<String> = []
-            for await identifier in group {
-                if let identifier { found.insert(identifier) }
+            var found: [String: String] = [:]
+            for await pair in group {
+                if let (dictationLocale, speechLocale) = pair { found[dictationLocale] = speechLocale }
             }
             return found
         }

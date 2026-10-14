@@ -129,6 +129,15 @@ enum AudioEnvironment {
         @unknown default: mic = "unknown"
         }
         lines.append("microphone permission: \(mic)")
+        let recognition: String
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized: recognition = "granted"
+        case .denied: recognition = "denied"
+        case .restricted: recognition = "restricted"
+        case .notDetermined: recognition = "not determined"
+        @unknown default: recognition = "unknown"
+        }
+        lines.append("speech recognition permission: \(recognition)")
 
         let output = (try? AudioObjectID.systemObject.read(kAudioHardwarePropertyDefaultOutputDevice, initial: AudioObjectID.unknown)) ?? .unknown
         let systemOutput = (try? AudioObjectID.defaultSystemOutputDevice()) ?? .unknown
@@ -143,7 +152,8 @@ enum AudioEnvironment {
         let supported = await SpeechTranscriber.supportedLocales
         lines.append("speech supported locales: \(supported.count)")
         let dictationSupported = await DictationTranscriber.supportedLocales
-        lines.append("dictation supported locales: \(dictationSupported.count)")
+        let dictationList = dictationSupported.map { $0.identifier(.bcp47) }.sorted().joined(separator: ", ")
+        lines.append("dictation supported locales: \(dictationSupported.count)\(dictationSupported.isEmpty ? "" : " (\(dictationList))")")
         // Which of the user's languages the speech service can transcribe, with either model.
         let speechLanguages = Set((supported + dictationSupported).compactMap { $0.language.languageCode?.identifier })
         let preferred = Locale.preferredLanguages.map { identifier in
@@ -157,8 +167,12 @@ enum AudioEnvironment {
         lines.append("speech installed locales: \(installed.isEmpty ? "none" : installed.joined(separator: ", "))")
         let dictationInstalled = await DictationTranscriber.installedLocales.map { $0.identifier }.sorted()
         lines.append("dictation installed locales: \(dictationInstalled.isEmpty ? "none" : dictationInstalled.joined(separator: ", "))")
-        let dictationCalls = await SpeechLanguages.callLocales().dictationOnly.sorted()
+        let callLocales = await SpeechLanguages.callLocales()
+        let dictationCalls = callLocales.dictationOnly.sorted()
         lines.append("call languages on the dictation model: \(dictationCalls.isEmpty ? "none" : dictationCalls.joined(separator: ", "))")
+        // The speech model naming another language as "equivalent" is ignored; listed to spot it.
+        let otherLanguage = callLocales.otherLanguageEquivalents.sorted { $0.key < $1.key }.map { "\($0.key) → \($0.value)" }
+        lines.append("speech model's other-language equivalents (ignored): \(otherLanguage.isEmpty ? "none" : otherLanguage.joined(separator: ", "))")
         let reserved = await AssetInventory.reservedLocales.map { $0.identifier }.sorted()
         lines.append("speech reserved locales: \(reserved.isEmpty ? "none" : reserved.joined(separator: ", "))")
         return lines
