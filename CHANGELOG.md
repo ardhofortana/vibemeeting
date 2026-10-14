@@ -62,6 +62,7 @@ Going back never deletes meeting files. The **Compatibility** notes under each v
 - Going back to 0.6.0 or earlier: stars don't show, and a meeting loses its star if that version saves it again (when you rename it or create its recap again).
 
 ### Fixed
+- **Windows open in front.** Open VibeMeeting, New meeting, Settings and Audio check from the menu bar no longer open behind the app you're in, and they open on the Space you're on. The main window that opens after a meeting is saved comes to the front without taking the keyboard from the app you went to meanwhile.
 - **"Remove the call's voice from my mic" works on more setups.** It now finds the speakers' sound in the mic with loud speakers, a sensitive USB mic, a lively room and delays up to 0.6 s, and the mic waits briefly (at most 0.3 s, only when needed) for the call audio it's compared with, so the sound is actually muted instead of slipping through unjudged. Audio check and the report now show what the gate found and, if it found nothing, why.
 
 ## [0.6.0] - 2026-10-12
