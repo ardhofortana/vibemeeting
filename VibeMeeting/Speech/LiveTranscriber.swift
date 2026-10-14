@@ -105,10 +105,9 @@ final class LiveTranscriber: @unchecked Sendable {
     /// accurate model, else DictationTranscriber. Never another language.
     /// SpeechLanguages lists the call languages by the same rule.
     private static func makeTranscriber(for requested: Locale) async throws -> (recognizer: Recognizer, locale: Locale) {
-        // The speech model's equivalent counts only in the same language.
         if SpeechTranscriber.isAvailable,
            let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested),
-           MeetingLanguage.isSameLanguage(locale.identifier(.bcp47), requested.identifier(.bcp47)) {
+           await speechTranscriberLists(locale, for: requested) {
             let transcriber = SpeechTranscriber(
                 locale: locale,
                 transcriptionOptions: [],
@@ -134,6 +133,17 @@ final class LiveTranscriber: @unchecked Sendable {
             return (.dictation(transcriber), locale)
         }
         throw Failure.unsupportedLocale(requested.identifier(.bcp47))
+    }
+
+    /// Whether SpeechTranscriber's equivalent for `requested` is one it really
+    /// transcribes: in its own list, in the same language. Its
+    /// supportedLocale(equivalentTo:) answered for Indonesian on macOS 26.6.2,
+    /// which its list doesn't have.
+    private static func speechTranscriberLists(_ locale: Locale, for requested: Locale) async -> Bool {
+        let identifier = locale.identifier(.bcp47)
+        guard MeetingLanguage.isSameLanguage(identifier, requested.identifier(.bcp47)) else { return false }
+        let listed = await SpeechTranscriber.supportedLocales.map { $0.identifier(.bcp47) }
+        return MeetingLanguage.entry(for: identifier, in: listed) != nil
     }
 
     /// Reserves the locale, downloads the model if needed (reporting progress),

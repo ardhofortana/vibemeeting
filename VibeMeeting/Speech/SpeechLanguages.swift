@@ -54,7 +54,8 @@ final class SpeechLanguages {
         let speechIdentifiers = Set(speech.map { $0.identifier(.bcp47) })
         let candidates = speechAvailable ? dictation.filter { !speechIdentifiers.contains($0.identifier(.bcp47)) } : []
         // One question to the speech service per locale, asked side by side.
-        // CallLocales ignores an equivalent in another language.
+        // CallLocales counts an answer only if the speech model lists it, in
+        // the same language.
         let equivalents = await withTaskGroup(of: (String, String)?.self, returning: [String: String].self) { group in
             for locale in candidates {
                 group.addTask {

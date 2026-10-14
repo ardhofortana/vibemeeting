@@ -170,9 +170,9 @@ enum AudioEnvironment {
         let callLocales = await SpeechLanguages.callLocales()
         let dictationCalls = callLocales.dictationOnly.sorted()
         lines.append("call languages on the dictation model: \(dictationCalls.isEmpty ? "none" : dictationCalls.joined(separator: ", "))")
-        // The speech model naming another language as "equivalent" is ignored; listed to spot it.
-        let otherLanguage = callLocales.otherLanguageEquivalents.sorted { $0.key < $1.key }.map { "\($0.key) → \($0.value)" }
-        lines.append("speech model's other-language equivalents (ignored): \(otherLanguage.isEmpty ? "none" : otherLanguage.joined(separator: ", "))")
+        // Answers from the speech model for locales it doesn't list, or in another language.
+        let ignored = callLocales.ignoredEquivalents.sorted { $0.key < $1.key }.map { "\($0.key) → \($0.value)" }
+        lines.append("speech model's equivalents ignored (not in its list, or another language): \(ignored.isEmpty ? "none" : ignored.joined(separator: ", "))")
         let reserved = await AssetInventory.reservedLocales.map { $0.identifier }.sorted()
         lines.append("speech reserved locales: \(reserved.isEmpty ? "none" : reserved.joined(separator: ", "))")
         return lines

@@ -12,15 +12,17 @@ public struct CallLocales: Equatable, Sendable {
     public let speech: [String]
     /// The call languages the Dictation model transcribes.
     public let dictationOnly: Set<String>
-    /// Dictation locales for which the speech model named a different language
-    /// as its equivalent. That answer is ignored and they stay with Dictation;
+    /// Dictation locales whose speech model "equivalent" doesn't count: one it
+    /// doesn't list itself, or in another language. They stay with Dictation;
     /// kept for the diagnostics report.
-    public let otherLanguageEquivalents: [String: String]
+    public let ignoredEquivalents: [String: String]
 
-    /// `speechEquivalents` maps Dictation locales to the locale the speech model
-    /// accepts for them under another identifier. Those in the same language are
-    /// left out, so no language is listed twice; an equivalent in another
-    /// language never counts.
+    /// `speechEquivalents` maps Dictation locales to what the speech model's
+    /// supportedLocale(equivalentTo:) answered for them. A Dictation locale is
+    /// left out, so no language is listed twice, only when that answer is in
+    /// `speech` and in the same language. The answer alone proves nothing: on
+    /// macOS 26.6.2 the speech model answered for Indonesian and every other
+    /// language only Dictation lists.
     public init(speech: [String], dictation: [String], speechEquivalents: [String: String] = [:]) {
         var all: [String] = []
         var seen: Set<String> = []
@@ -28,26 +30,27 @@ public struct CallLocales: Equatable, Sendable {
             all.append(identifier)
         }
         self.speech = all
-        var sameLanguage: Set<String> = []
-        var otherLanguage: [String: String] = [:]
+        var covered: Set<String> = []
+        var ignored: [String: String] = [:]
         for (dictationLocale, speechLocale) in speechEquivalents {
             let dictationLocale = MeetingLanguage.normalized(dictationLocale)
             let speechLocale = MeetingLanguage.normalized(speechLocale)
-            if MeetingLanguage.isSameLanguage(dictationLocale, speechLocale) {
-                sameLanguage.insert(dictationLocale)
+            if MeetingLanguage.isSameLanguage(dictationLocale, speechLocale),
+               MeetingLanguage.entry(for: speechLocale, in: all) != nil {
+                covered.insert(dictationLocale)
             } else {
-                otherLanguage[dictationLocale] = speechLocale
+                ignored[dictationLocale] = speechLocale
             }
         }
         var dictationOnly: Set<String> = []
         for identifier in dictation.map(MeetingLanguage.normalized)
-        where !sameLanguage.contains(identifier) && seen.insert(identifier).inserted {
+        where !covered.contains(identifier) && seen.insert(identifier).inserted {
             all.append(identifier)
             dictationOnly.insert(identifier)
         }
         self.all = all
         self.dictationOnly = dictationOnly
-        self.otherLanguageEquivalents = otherLanguage
+        self.ignoredEquivalents = ignored
     }
 
     /// The call languages whose model is on this Mac. Each counts only with the

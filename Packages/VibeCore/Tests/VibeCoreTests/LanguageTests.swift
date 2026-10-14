@@ -76,17 +76,30 @@ final class LanguageTests: XCTestCase {
         let locales = CallLocales(
             speech: ["en-US", "en-GB", "de-DE", "en-US"],
             dictation: ["en_US", "de-DE", "de-AT", "id-ID", "ms-MY", "id-ID"],
-            speechEquivalents: ["de-AT": "de-DE", "id-ID": "en-US"]
+            speechEquivalents: ["de-AT": "de-DE", "id-ID": "en-US", "ms-MY": "ms-MY"]
         )
         // Each language once; one the speech model takes under another identifier
-        // isn't added, but an "equivalent" in another language never counts.
+        // isn't added. An "equivalent" in another language, or one the speech
+        // model doesn't list (as macOS 26.6.2 answers for Indonesian), never counts.
         XCTAssertEqual(locales.all, ["en-US", "en-GB", "de-DE", "id-ID", "ms-MY"])
         XCTAssertEqual(locales.speech, ["en-US", "en-GB", "de-DE"])
         XCTAssertEqual(locales.dictationOnly, ["id-ID", "ms-MY"])
-        XCTAssertEqual(locales.otherLanguageEquivalents, ["id-ID": "en-US"])
+        XCTAssertEqual(locales.ignoredEquivalents, ["id-ID": "en-US", "ms-MY": "ms-MY"])
+
+        // What the owner's Mac answered: an equivalent for every Dictation-only
+        // language, each the locale itself.
+        let speech26 = ["en-US", "de-DE", "zh-CN"]
+        let dictation26 = ["en-US", "de-DE", "zh-CN", "id-ID", "ms-MY", "ar-SA"]
+        let answers = Dictionary(uniqueKeysWithValues: ["id-ID", "ms-MY", "ar-SA"].map { ($0, $0) })
+        XCTAssertEqual(CallLocales(speech: speech26, dictation: dictation26, speechEquivalents: answers).dictationOnly, ["id-ID", "ms-MY", "ar-SA"])
+
         XCTAssertTrue(MeetingLanguage.isSameLanguage("de-AT", "de_DE"))
         XCTAssertFalse(MeetingLanguage.isSameLanguage("id-ID", "en-US"))
         XCTAssertFalse(MeetingLanguage.isSameLanguage("", "en-US"))
+        XCTAssertEqual(MeetingLanguage.entry(for: "en_US", in: ["en-GB", "en-US"]), "en-US")
+        XCTAssertEqual(MeetingLanguage.entry(for: "zh-Hans-CN", in: ["zh-CN", "zh-TW"]), "zh-CN")
+        XCTAssertNil(MeetingLanguage.entry(for: "id-ID", in: ["en-US", "ms-MY"]))
+        XCTAssertNil(MeetingLanguage.entry(for: "de-AT", in: ["de-DE"]))
 
         // Automatic stays on the speech model: an English only Dictation has
         // (such as English (Indonesia)) gives the usual form.

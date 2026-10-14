@@ -69,6 +69,16 @@ public struct MeetingLanguage: Codable, Hashable, Sendable {
         return language == languageCode(of: second)
     }
 
+    /// The entry of `list` for `identifier`: the same identifier, or the same
+    /// language and region written another way ("zh-Hans-CN" finds "zh-CN").
+    public static func entry(for identifier: String, in list: [String]) -> String? {
+        let identifier = normalized(identifier)
+        if let exact = list.first(where: { normalized($0) == identifier }) { return exact }
+        guard let language = languageCode(of: identifier) else { return nil }
+        let region = Locale(identifier: identifier).region?.identifier
+        return list.first { languageCode(of: $0) == language && Locale(identifier: $0).region?.identifier == region }
+    }
+
     /// The language's name in English, for prompts: "German (Germany)". The
     /// identifier itself when the name isn't known.
     public static func englishName(of identifier: String) -> String {
