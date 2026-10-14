@@ -93,7 +93,7 @@ The app layer is compiled in CI but needs a real Mac for these:
 5. **Hotkeys:** try each one while Zoom or Chrome is in front. If ⌥R, ⌥S or ⌥H sometimes types a character (macOS can turn ⌥ + letter into characters such as ®), switch to ⌃⌥R and so on.
 6. **System load:** watch CPU in Activity Monitor during a 30-minute call.
 7. **Screen sharing:** check whether the overlay shows in Zoom, Meet, Teams and OBS, with Hide from screen sharing on and off.
-8. **Languages:** a call in a language other than English, including the speech model download and its progress.
+8. **Languages:** a call in a language other than English, including the speech model download and its progress, and one in a language only Dictation supports (such as Indonesian), which runs on DictationTranscriber.
 
 ## Architecture
 
@@ -109,6 +109,8 @@ Mic ───────────► AVAudioEngine + voice processing ──
                                                                           ▼
                                              Overlay (non-activating NSPanel)
 ```
+
+A call language SpeechTranscriber doesn't support (such as Indonesian) runs on DictationTranscriber, the model behind macOS Dictation, instead.
 
 Audio is never written to disk and never leaves the Mac. What is sent to Anthropic is described by `PrivacyNote.summary` (see [docs/COPY.md](docs/COPY.md#privacy-statement)).
 

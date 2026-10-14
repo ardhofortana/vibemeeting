@@ -45,8 +45,9 @@ public enum TranscriberState: Equatable, Sendable {
     /// Downloading the speech model for the call language, this far (0–100).
     case downloadingModel(percent: Int)
     case startingAnalyzer
-    /// Recognizing speech in this locale (BCP 47, e.g. "en-US").
-    case running(locale: String)
+    /// Recognizing speech in this locale (BCP 47, e.g. "en-US") with this
+    /// model ("SpeechTranscriber" or "DictationTranscriber").
+    case running(locale: String, engine: String)
     case failedToStart
     /// The analyzer threw an error while running.
     case stoppedWithError
@@ -66,7 +67,7 @@ public enum TranscriberState: Equatable, Sendable {
         case .preparingModel: return "Preparing speech model"
         case .downloadingModel(let percent): return "Downloading speech model (\(percent)%)"
         case .startingAnalyzer: return "Starting analyzer"
-        case .running(let locale): return "Running (\(locale))"
+        case .running(let locale, let engine): return "Running (\(locale), \(engine))"
         case .failedToStart: return "Failed to start"
         case .stoppedWithError: return "Stopped with an error"
         case .endedUnexpectedly: return "Ended unexpectedly"

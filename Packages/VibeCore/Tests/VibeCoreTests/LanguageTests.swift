@@ -52,24 +52,53 @@ final class LanguageTests: XCTestCase {
         }
     }
 
-    func testDefaultCallLanguageIsTheFirstPreferredOneSpeechSupports() {
-        let supported = ["en-US", "en-GB", "de-DE", "fr-FR", "fr-CA", "es-ES", "es-MX", "pt-BR", "ja-JP", "zh-CN", "zh-TW"]
+    func testDefaultCallLanguageIsEnglishInThePreferredVariant() {
+        let supported = ["en-US", "en-GB", "en-IN", "de-DE", "fr-FR", "fr-CA", "es-ES", "pt-BR", "ja-JP", "zh-CN", "id-ID", "ms-MY"]
         func pick(_ preferred: [String]) -> String {
             MeetingLanguage.defaultCallLocale(preferredLanguages: preferred, supported: supported)
         }
-        XCTAssertEqual(pick(["de-DE", "en-US"]), "de-DE")
-        XCTAssertEqual(pick(["fr-CA"]), "fr-CA")
-        // Same language, another region: the language's usual form.
-        XCTAssertEqual(pick(["de-AT"]), "de-DE")
-        XCTAssertEqual(pick(["en-ID", "id-ID"]), "en-US")
-        XCTAssertEqual(pick(["es-419"]), "es-ES")
-        XCTAssertEqual(pick(["zh-Hant-TW"]), "zh-TW")
-        // Unsupported languages are skipped.
-        XCTAssertEqual(pick(["id-ID", "en-GB"]), "en-GB")
+        // Other languages, even supported ones, are never the default.
+        XCTAssertEqual(pick(["de-DE", "en-US"]), "en-US")
+        XCTAssertEqual(pick(["de-DE", "en-GB"]), "en-GB")
         XCTAssertEqual(pick(["id-ID"]), "en-US")
+        XCTAssertEqual(pick(["id-ID", "ms-MY", "en-IN"]), "en-IN")
+        XCTAssertEqual(pick(["fr-CA", "de-DE"]), "en-US")
         XCTAssertEqual(pick([]), "en-US")
-        XCTAssertEqual(MeetingLanguage.defaultCallLocale(preferredLanguages: ["pt_BR"], supported: ["pt_BR"]), "pt-BR")
-        XCTAssertEqual(MeetingLanguage.defaultCallLocale(preferredLanguages: ["de-DE"], supported: []), "en-US")
+        // English in another region: the usual form.
+        XCTAssertEqual(pick(["en-ID", "id-ID"]), "en-US")
+        XCTAssertEqual(pick(["en-AU"]), "en-US")
+        XCTAssertEqual(pick(["en"]), "en-US")
+        XCTAssertEqual(MeetingLanguage.defaultCallLocale(preferredLanguages: ["en_GB"], supported: ["en_GB", "en_US"]), "en-GB")
+        XCTAssertEqual(MeetingLanguage.defaultCallLocale(preferredLanguages: ["en-GB"], supported: []), "en-US")
+    }
+
+    func testCallLanguagesAddWhatOnlyDictationHears() {
+        let locales = CallLocales(
+            speech: ["en-US", "en-GB", "de-DE", "en-US"],
+            dictation: ["en_US", "de-DE", "de-AT", "id-ID", "ms-MY", "id-ID"],
+            speechEquivalents: ["de-AT"]
+        )
+        // Each language once; one the speech model takes under another identifier isn't added.
+        XCTAssertEqual(locales.all, ["en-US", "en-GB", "de-DE", "id-ID", "ms-MY"])
+        XCTAssertEqual(locales.speech, ["en-US", "en-GB", "de-DE"])
+        XCTAssertEqual(locales.dictationOnly, ["id-ID", "ms-MY"])
+
+        // Automatic stays on the speech model: an English only Dictation has
+        // (such as English (Indonesia)) gives the usual form.
+        let english = CallLocales(speech: ["en-US", "en-GB"], dictation: ["en-US", "en-ID", "id-ID"])
+        XCTAssertEqual(english.dictationOnly, ["en-ID", "id-ID"])
+        XCTAssertEqual(MeetingLanguage.defaultCallLocale(preferredLanguages: ["en-ID", "id-ID"], supported: english.speech), "en-US")
+
+        // A language counts as installed only with the model that hears it.
+        XCTAssertEqual(locales.installed(speech: ["en-US", "id-ID"], dictation: ["en-GB", "ms-MY"]), ["en-US", "ms-MY"])
+        XCTAssertEqual(locales.installed(speech: [], dictation: []), [])
+
+        // Without the speech model, Dictation hears every language.
+        let dictation = CallLocales(speech: [], dictation: ["en-US", "id-ID"])
+        XCTAssertEqual(dictation.all, ["en-US", "id-ID"])
+        XCTAssertEqual(dictation.speech, [])
+        XCTAssertEqual(dictation.dictationOnly, ["en-US", "id-ID"])
+        XCTAssertEqual(dictation.installed(speech: ["en-US"], dictation: ["id-ID"]), ["id-ID"])
     }
 
     func testWritingLanguagesHaveNames() {

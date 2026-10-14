@@ -76,7 +76,7 @@ Lebih rincinya:
 
 ## Bahasa
 
-- **Bahasa call.** Setiap meeting punya satu bahasa yang diucapkan kedua pihak. Kamu bisa memilih bahasa apa pun yang didukung speech recognition on-device macOS; daftarnya ada di Settings → General → **Call language** dan di jendela New meeting. Default-nya (Automatic) adalah bahasa pertama di daftar bahasa Mac-mu yang didukung speech recognition, atau English (United States) kalau tidak ada.
+- **Bahasa call.** Setiap meeting punya satu bahasa yang diucapkan kedua pihak. Kamu bisa memilih bahasa apa pun yang didukung speech recognition on-device macOS, termasuk semua bahasa yang didukung Dictation macOS (misalnya Indonesia dan Melayu, yang ditranskripsi dengan model Dictation); daftarnya ada di Settings → General → **Call language** dan di jendela New meeting. Default-nya (Automatic) adalah bahasa Inggris, dengan varian dari daftar bahasa Mac-mu kalau ada, atau English (United States) kalau tidak ada.
 - **Jawaban, Ask questions, dan rekap** ditulis dalam bahasa call, kecuali kamu memilih bahasa lain di New meeting. Ada 35 bahasa yang bisa dipilih di sana.
 - **Teksmu sendiri** (About me, goal, instruksi meeting, Steer, konteks) boleh dalam bahasa apa pun, atau campuran.
 - **Bahasa preview.** Bahasa yang tidak ditulis dengan alfabet Latin atau Sirilik (misalnya Mandarin, Jepang, Korea, Thai, Arab, dan Ibrani) bisa dipakai, tapi ditandai "preview": pemenggalan kalimat, hitungan kata, dan filter gema disetel untuk bahasa lainnya.

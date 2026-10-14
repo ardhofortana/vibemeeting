@@ -4,7 +4,8 @@ import Speech
 import VibeCore
 
 /// On-device transcription for one audio stream (Them or You) in the meeting's
-/// call language, built on SpeechAnalyzer + SpeechTranscriber (macOS 26). Two
+/// call language, built on SpeechAnalyzer + SpeechTranscriber (macOS 26), or
+/// DictationTranscriber for the languages only Dictation supports. Two
 /// instances run at once in the same locale, so they share the backing engine.
 final class LiveTranscriber: @unchecked Sendable {
     enum Failure: Error, LocalizedError {
@@ -60,28 +61,83 @@ final class LiveTranscriber: @unchecked Sendable {
 
     // MARK: - Setup
 
-    /// A transcriber for `requested` and the exact locale the system supports for it.
-    static func makeTranscriber(for requested: Locale) async throws -> (transcriber: SpeechTranscriber, locale: Locale) {
-        guard SpeechTranscriber.isAvailable,
-              let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested)
-        else {
-            throw Failure.unsupportedLocale(requested.identifier(.bcp47))
+    /// The module that turns one stream's speech into text.
+    private enum Recognizer: Sendable {
+        /// The more accurate model, for every language it supports.
+        case speech(SpeechTranscriber)
+        /// The model behind macOS Dictation, for languages SpeechTranscriber
+        /// doesn't support (such as Indonesian and Malay).
+        case dictation(DictationTranscriber)
+
+        var module: any SpeechModule {
+            switch self {
+            case .speech(let transcriber): return transcriber
+            case .dictation(let transcriber): return transcriber
+            }
         }
-        let transcriber = SpeechTranscriber(
-            locale: locale,
-            transcriptionOptions: [],
-            // Volatile results drive the live subtitle; finals lock the text in.
-            reportingOptions: [.volatileResults],
-            attributeOptions: []
-        )
-        return (transcriber, locale)
+
+        /// For diagnostics and logs.
+        var name: String {
+            switch self {
+            case .speech: return "SpeechTranscriber"
+            case .dictation: return "DictationTranscriber"
+            }
+        }
+
+        /// Hands each result's text to `body`, in order, until the results end.
+        /// Throws what ends them: an analyzer or module error, or cancellation.
+        func forEachResult(_ body: (_ text: String, _ isFinal: Bool) async -> Void) async throws {
+            switch self {
+            case .speech(let transcriber):
+                for try await result in transcriber.results {
+                    await body(String(result.text.characters), result.isFinal)
+                }
+            case .dictation(let transcriber):
+                for try await result in transcriber.results {
+                    await body(String(result.text.characters), result.isFinal)
+                }
+            }
+        }
+    }
+
+    /// A recognizer for `requested` and the exact locale it supports for it:
+    /// SpeechTranscriber whenever it supports the language, since it's the more
+    /// accurate model, else DictationTranscriber. Never another language.
+    /// SpeechLanguages lists the call languages by the same rule.
+    private static func makeTranscriber(for requested: Locale) async throws -> (recognizer: Recognizer, locale: Locale) {
+        if SpeechTranscriber.isAvailable, let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested) {
+            let transcriber = SpeechTranscriber(
+                locale: locale,
+                transcriptionOptions: [],
+                // Volatile results drive the live subtitle; finals lock the text in.
+                reportingOptions: [.volatileResults],
+                attributeOptions: []
+            )
+            return (.speech(transcriber), locale)
+        }
+        if let locale = await DictationTranscriber.supportedLocale(equivalentTo: requested) {
+            let transcriber = DictationTranscriber(
+                locale: locale,
+                contentHints: [],
+                // Without punctuation Dictation writes none, and the transcript
+                // splits sentences on it.
+                transcriptionOptions: [.punctuation],
+                // Frequent finals keep turns in order: without them Dictation
+                // finalizes about once a minute, which keeps one side's turn
+                // open while the other talks.
+                reportingOptions: [.volatileResults, .frequentFinalization],
+                attributeOptions: []
+            )
+            return (.dictation(transcriber), locale)
+        }
+        throw Failure.unsupportedLocale(requested.identifier(.bcp47))
     }
 
     /// Reserves the locale, downloads the model if needed (reporting progress),
     /// and waits until it's usable.
-    static func ensureAssets(for transcriber: SpeechTranscriber, locale: Locale, onProgress: ProgressHandler? = nil) async throws {
+    private static func ensureAssets(for recognizer: Recognizer, locale: Locale, onProgress: ProgressHandler? = nil) async throws {
         try await reserve(locale)
-        if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+        if let request = try await AssetInventory.assetInstallationRequest(supporting: [recognizer.module]) {
             let progress = request.progress
             // Progress is read a few times a second while the download runs.
             let reporter = onProgress.map { report in
@@ -104,7 +160,7 @@ final class LiveTranscriber: @unchecked Sendable {
         // downloadAndInstall() can return before the model is usable;
         // bestAvailableAudioFormat stays nil until it is.
         for _ in 0..<40 {
-            if await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) != nil { return }
+            if await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [recognizer.module]) != nil { return }
             try await Task.sleep(for: .milliseconds(250))
         }
         throw Failure.assetsNotReady
@@ -129,8 +185,8 @@ final class LiveTranscriber: @unchecked Sendable {
 
     /// Downloads the model for `locale` up front (onboarding, Settings).
     static func prepareAssets(for locale: Locale, onProgress: ProgressHandler? = nil) async throws {
-        let (transcriber, supported) = try await makeTranscriber(for: locale)
-        try await ensureAssets(for: transcriber, locale: supported, onProgress: onProgress)
+        let (recognizer, supported) = try await makeTranscriber(for: locale)
+        try await ensureAssets(for: recognizer, locale: supported, onProgress: onProgress)
     }
 
     /// Locales that running transcribers use, which a new reservation never releases.
@@ -159,14 +215,14 @@ final class LiveTranscriber: @unchecked Sendable {
 
     private func startAnalyzer(token: Int, onUpdate: @escaping UpdateHandler, onError: @escaping ErrorHandler, onModelProgress: ProgressHandler?) async throws {
         let diagnostics = self.diagnostics
-        let (transcriber, locale) = try await Self.makeTranscriber(for: self.locale)
+        let (recognizer, locale) = try await Self.makeTranscriber(for: self.locale)
         markLocaleInUse(locale.identifier(.bcp47))
         diagnostics.update { $0.transcriberState = .preparingModel }
-        try await Self.ensureAssets(for: transcriber, locale: locale) { fraction in
+        try await Self.ensureAssets(for: recognizer, locale: locale) { fraction in
             diagnostics.update { $0.transcriberState = .downloadingModel(percent: Int((fraction * 100).rounded())) }
             onModelProgress?(fraction)
         }
-        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+        guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [recognizer.module]) else {
             throw Failure.noAudioFormat
         }
         diagnostics.update {
@@ -175,7 +231,7 @@ final class LiveTranscriber: @unchecked Sendable {
         }
 
         let analyzer = SpeechAnalyzer(
-            modules: [transcriber],
+            modules: [recognizer.module],
             options: SpeechAnalyzer.Options(priority: .userInitiated, modelRetention: .lingering)
         )
         // bufferingNewest drops the oldest chunk on overflow; 600 × 100 ms = 60 s of headroom.
@@ -185,13 +241,13 @@ final class LiveTranscriber: @unchecked Sendable {
         // Consume results before starting, as Apple's sample does, so nothing (not even an error) is missed.
         let resultsTask = Task { [weak self] in
             do {
-                for try await result in transcriber.results {
+                try await recognizer.forEachResult { text, isFinal in
                     diagnostics.update {
-                        if result.isFinal { $0.finalResults += 1 } else { $0.volatileResults += 1 }
+                        if isFinal { $0.finalResults += 1 } else { $0.volatileResults += 1 }
                         $0.lastResultAt = Date()
                     }
                     // Awaiting keeps volatile and final results in order.
-                    await onUpdate(TranscriptUpdate(speaker: speaker, kind: result.isFinal ? .final : .volatile, text: String(result.text.characters)))
+                    await onUpdate(TranscriptUpdate(speaker: speaker, kind: isFinal ? .final : .volatile, text: text))
                 }
                 // A normal end is expected only after stop(), which bumps the generation.
                 let stillRunning = self?.lock.withLock { self?.generation == token } ?? false
@@ -245,8 +301,8 @@ final class LiveTranscriber: @unchecked Sendable {
             diagnostics.update { $0.transcriberState = .stopped }
             return
         }
-        diagnostics.update { $0.transcriberState = .running(locale: locale.identifier(.bcp47)) }
-        Log.speech.info("Transcriber \(speaker.rawValue, privacy: .public) started, \(StreamDiagnostics.describe(format), privacy: .public)")
+        diagnostics.update { $0.transcriberState = .running(locale: locale.identifier(.bcp47), engine: recognizer.name) }
+        Log.speech.info("Transcriber \(speaker.rawValue, privacy: .public) started on \(recognizer.name, privacy: .public), \(StreamDiagnostics.describe(format), privacy: .public)")
     }
 
     private func markLocaleInUse(_ key: String) {

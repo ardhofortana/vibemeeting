@@ -3,6 +3,7 @@ import CoreAudio
 import Foundation
 import Security
 import Speech
+import VibeCore
 
 /// System audio capture permission ("System Audio Recording Only" in Privacy & Security).
 ///
@@ -141,8 +142,10 @@ enum AudioEnvironment {
         lines.append("speech transcriber available: \(SpeechTranscriber.isAvailable)")
         let supported = await SpeechTranscriber.supportedLocales
         lines.append("speech supported locales: \(supported.count)")
-        // Which of the user's languages the speech service can transcribe.
-        let speechLanguages = Set(supported.compactMap { $0.language.languageCode?.identifier })
+        let dictationSupported = await DictationTranscriber.supportedLocales
+        lines.append("dictation supported locales: \(dictationSupported.count)")
+        // Which of the user's languages the speech service can transcribe, with either model.
+        let speechLanguages = Set((supported + dictationSupported).compactMap { $0.language.languageCode?.identifier })
         let preferred = Locale.preferredLanguages.map { identifier in
             let code = Locale(identifier: identifier).language.languageCode?.identifier
             let transcribable = code.map { speechLanguages.contains($0) } ?? false
@@ -152,6 +155,10 @@ enum AudioEnvironment {
         lines.append("preferred languages: \(preferred.isEmpty ? "none" : preferred.joined(separator: ", "))")
         let installed = await SpeechTranscriber.installedLocales.map { $0.identifier }.sorted()
         lines.append("speech installed locales: \(installed.isEmpty ? "none" : installed.joined(separator: ", "))")
+        let dictationInstalled = await DictationTranscriber.installedLocales.map { $0.identifier }.sorted()
+        lines.append("dictation installed locales: \(dictationInstalled.isEmpty ? "none" : dictationInstalled.joined(separator: ", "))")
+        let dictationCalls = await SpeechLanguages.callLocales().dictationOnly.sorted()
+        lines.append("call languages on the dictation model: \(dictationCalls.isEmpty ? "none" : dictationCalls.joined(separator: ", "))")
         let reserved = await AssetInventory.reservedLocales.map { $0.identifier }.sorted()
         lines.append("speech reserved locales: \(reserved.isEmpty ? "none" : reserved.joined(separator: ", "))")
         return lines

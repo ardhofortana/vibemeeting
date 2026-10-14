@@ -74,7 +74,7 @@ final class AppModel {
     }
 
     /// The call language for a new meeting: the one picked in Settings, else
-    /// the first of the Mac's languages that speech recognition supports.
+    /// English, in the variant the Mac's preferred languages use.
     var defaultCallLocale: String {
         settings.callLocaleID ?? languages.automaticCallLocale
     }

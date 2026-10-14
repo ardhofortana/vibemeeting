@@ -123,10 +123,12 @@ final class StableIdentifierTests: XCTestCase {
     }
 
     func testTranscriberStateChecksCasesNotText() {
-        let running = TranscriberState.running(locale: "en-US")
+        let running = TranscriberState.running(locale: "en-US", engine: "SpeechTranscriber")
         XCTAssertTrue(running.isRunning)
-        XCTAssertEqual(running.label, "Running (en-US)")
-        XCTAssertTrue(TranscriberState.running(locale: "id-ID").isRunning)
+        XCTAssertEqual(running.label, "Running (en-US, SpeechTranscriber)")
+        let dictation = TranscriberState.running(locale: "id-ID", engine: "DictationTranscriber")
+        XCTAssertTrue(dictation.isRunning)
+        XCTAssertEqual(dictation.label, "Running (id-ID, DictationTranscriber)")
 
         let others: [TranscriberState] = [.notStarted, .checkingModel, .preparingModel, .startingAnalyzer, .failedToStart, .stoppedWithError, .endedUnexpectedly, .stopped]
         XCTAssertTrue(others.allSatisfy { !$0.isRunning })

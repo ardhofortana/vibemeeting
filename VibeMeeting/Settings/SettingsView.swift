@@ -185,7 +185,7 @@ private struct CallLanguageSection: View {
             Text("Call language")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("What people speak in your calls. Both sides are transcribed in it, and replies, Ask questions and recaps are written in it unless you pick another language in New meeting. The speech model downloads once per language, when you first use it. Automatic picks the first of your Mac's languages that speech recognition supports.")
+                Text("What people speak in your calls. Both sides are transcribed in it, and replies, Ask questions and recaps are written in it unless you pick another language in New meeting. The speech model downloads once per language, when you first use it. Automatic is English: the variant in your Mac's languages if there is one, else English (United States). Some languages use the model behind macOS Dictation.")
                 if MeetingLanguage.isPreview(current) {
                     Text(MeetingLanguage.previewNote)
                 }

@@ -74,7 +74,7 @@ In more detail:
 
 ## Languages
 
-- **Call language.** Each meeting has one language that both sides speak. You can choose any language that macOS's on-device speech recognition supports; the list is in Settings → General → **Call language** and in the New meeting window. The default (Automatic) is the first of your Mac's preferred languages that speech recognition supports, or English (United States) if none is.
+- **Call language.** Each meeting has one language that both sides speak. You can choose any language that macOS's on-device speech recognition supports, including every language macOS Dictation supports (such as Indonesian and Malay, which are transcribed with the Dictation model); the list is in Settings → General → **Call language** and in the New meeting window. The default (Automatic) is English, in the variant from your Mac's preferred languages if there is one, else English (United States).
 - **Replies, Ask questions and the recap** are written in the call language unless you pick another one in New meeting. You can choose from 35 languages there.
 - **Your own text** (About me, goal, meeting instructions, Steer, context) can be in any language, or a mix.
 - **Preview languages.** Languages that aren't written in the Latin or Cyrillic alphabet (such as Chinese, Japanese, Korean, Thai, Arabic and Hebrew) work, but are marked "preview": sentence splitting, word counts and the echo filter are tuned for the others.

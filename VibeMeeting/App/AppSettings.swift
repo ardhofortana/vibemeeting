@@ -74,8 +74,8 @@ final class AppSettings {
     var voiceProcessing: Bool { didSet { defaults.set(voiceProcessing, forKey: Key.voiceProcessing) } }
     /// Mute the mic where it only carries the call's voice from the speakers.
     var suppressSpeakerBleed: Bool { didSet { defaults.set(suppressSpeakerBleed, forKey: Key.echoGate) } }
-    /// The call language for new meetings (BCP 47). nil follows the Mac's
-    /// preferred languages: see `SpeechLanguages.automaticCallLocale`.
+    /// The call language for new meetings (BCP 47). nil is English, in the
+    /// variant the Mac's preferred languages use: see `SpeechLanguages.automaticCallLocale`.
     var callLocaleID: String? { didSet { defaults.set(callLocaleID, forKey: Key.callLocale) } }
     var hasCompletedOnboarding: Bool { didSet { defaults.set(hasCompletedOnboarding, forKey: Key.onboarded) } }
 

@@ -4,7 +4,9 @@ import Speech
 import VibeCore
 
 /// The call languages speech recognition offers on this Mac, which of their
-/// models are installed, and model downloads in progress.
+/// models are installed, and model downloads in progress. The languages come
+/// from two models: SpeechTranscriber, and DictationTranscriber for the ones
+/// only Dictation supports (see `LiveTranscriber`).
 @MainActor
 @Observable
 final class SpeechLanguages {
@@ -16,18 +18,60 @@ final class SpeechLanguages {
     private(set) var downloads: [String: Double] = [:]
     /// Why the last download of a locale failed.
     private(set) var downloadErrors: [String: String] = [:]
-    /// The first of the user's preferred languages that speech recognition
-    /// supports, else English (United States). Known once `refresh()` ran.
+    /// English: the variant in the user's preferred languages when the speech
+    /// model supports it, else English (United States). Known once `refresh()` ran.
     private(set) var automaticCallLocale = MeetingLanguage.fallbackCallLocale
 
-    /// Reads both lists from the speech service. Quick, so windows call it when they open.
+    /// Reads the lists from the speech service. Quick, so windows call it when they open.
     func refresh() async {
-        let supportedLocales = await SpeechTranscriber.supportedLocales
-        let installedLocales = await SpeechTranscriber.installedLocales
-        let identifiers = Set(supportedLocales.map { $0.identifier(.bcp47) })
-        supported = identifiers.sorted { MeetingLanguage.displayName(of: $0).localizedStandardCompare(MeetingLanguage.displayName(of: $1)) == .orderedAscending }
-        installed = Set(installedLocales.map { $0.identifier(.bcp47) })
-        automaticCallLocale = MeetingLanguage.defaultCallLocale(preferredLanguages: Locale.preferredLanguages, supported: supported)
+        let locales = await Self.callLocales()
+        let speechInstalled = await SpeechTranscriber.installedLocales
+        let dictationInstalled = await DictationTranscriber.installedLocales
+        supported = locales.all.sorted { MeetingLanguage.displayName(of: $0).localizedStandardCompare(MeetingLanguage.displayName(of: $1)) == .orderedAscending }
+        installed = locales.installed(speech: speechInstalled.map { $0.identifier(.bcp47) }, dictation: dictationInstalled.map { $0.identifier(.bcp47) })
+        // Automatic stays on the speech model, the more accurate one: an English
+        // only Dictation has (such as en-ID) gives the usual form instead.
+        automaticCallLocale = MeetingLanguage.defaultCallLocale(preferredLanguages: Locale.preferredLanguages, supported: locales.speech)
+    }
+
+    /// The supported lists don't change while the app runs, so they're read once.
+    private static var cachedCallLocales: CallLocales?
+
+    /// Every call language, and which ones DictationTranscriber hears, by the
+    /// rule `LiveTranscriber` picks a model with: SpeechTranscriber for every
+    /// locale it accepts, listed or equivalent, and DictationTranscriber for the rest.
+    static func callLocales() async -> CallLocales {
+        if let cached = cachedCallLocales { return cached }
+        let speechAvailable = SpeechTranscriber.isAvailable
+        var speech: [Locale] = []
+        if speechAvailable {
+            speech = await SpeechTranscriber.supportedLocales
+        }
+        let dictation = await DictationTranscriber.supportedLocales
+        let speechIdentifiers = Set(speech.map { $0.identifier(.bcp47) })
+        let candidates = speechAvailable ? dictation.filter { !speechIdentifiers.contains($0.identifier(.bcp47)) } : []
+        // One question to the speech service per locale, asked side by side.
+        let equivalents = await withTaskGroup(of: String?.self, returning: Set<String>.self) { group in
+            for locale in candidates {
+                group.addTask {
+                    let equivalent = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+                    return equivalent == nil ? nil : locale.identifier(.bcp47)
+                }
+            }
+            var found: Set<String> = []
+            for await identifier in group {
+                if let identifier { found.insert(identifier) }
+            }
+            return found
+        }
+        let locales = CallLocales(
+            speech: speech.map { $0.identifier(.bcp47) },
+            dictation: dictation.map { $0.identifier(.bcp47) },
+            speechEquivalents: equivalents
+        )
+        // An empty answer may come from a speech service that isn't ready yet: ask again next time.
+        if !locales.all.isEmpty { cachedCallLocales = locales }
+        return locales
     }
 
     func isInstalled(_ identifier: String) -> Bool {

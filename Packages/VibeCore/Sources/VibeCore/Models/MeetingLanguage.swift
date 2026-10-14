@@ -22,7 +22,8 @@ public struct MeetingLanguage: Codable, Hashable, Sendable {
     }
 
     /// The call language of meetings saved before languages existed, and the
-    /// default when speech recognition supports none of the user's languages.
+    /// default when the user's languages include no English that speech
+    /// recognition supports.
     public static let fallbackCallLocale = "en-US"
 
     /// English (United States) for everything, as before meetings had a language.
@@ -81,13 +82,14 @@ public struct MeetingLanguage: Codable, Hashable, Sendable {
 
     // MARK: - Defaults
 
-    /// The call language for a new user: the first of their preferred languages
-    /// that speech recognition supports, matched exactly, then by region, then
-    /// by the language's usual form ("en" → "en-US"). English (United States)
-    /// when none is supported.
+    /// The call language for a new user: English. The variant is the first
+    /// English one in their preferred languages that speech recognition
+    /// supports, matched exactly, then by region, then by the usual form
+    /// ("en" → "en-US"); English (United States) when they have none. Other
+    /// languages are picked in Settings or New meeting.
     public static func defaultCallLocale(preferredLanguages: [String], supported: [String]) -> String {
         let supported = supported.map(normalized)
-        for preferred in preferredLanguages.map(normalized) {
+        for preferred in preferredLanguages.map(normalized) where isEnglish(preferred) {
             if let exact = supported.first(where: { $0.caseInsensitiveCompare(preferred) == .orderedSame }) {
                 return exact
             }
