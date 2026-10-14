@@ -44,6 +44,9 @@ final class StreamDiagnostics: @unchecked Sendable {
 
         // Speech
         var transcriberState: TranscriberState = .notStarted
+        /// The model transcribing this stream ("SpeechTranscriber" or
+        /// "DictationTranscriber") once picked, kept after it stops or fails.
+        var engine: String?
         var analyzerFormat = "–"
         var buffersToAnalyzer = 0
         var framesToAnalyzer = 0
@@ -191,6 +194,7 @@ extension StreamDiagnostics.Snapshot {
             "  rebuilds \(rebuilds), last reason: \(lastRebuildReason ?? "–"), problem: \(problem ?? "none")",
             "  chosen app idle while another app plays: \(chosenAppIdle)",
             "transcriber: \(transcriberState.label)",
+            "  model \(engine ?? "–")",
             "  analyzer format \(analyzerFormat)",
             "  to analyzer: chunks \(buffersToAnalyzer), frames \(framesToAnalyzer), speech-level \(speechLevelChunks), dropped \(droppedChunks), conversion failures \(conversionFailures)",
             String(format: "  analyzer peak RMS %.5f, last audible %@", analyzerPeakRMS, ago(lastAudibleToAnalyzerAt)),

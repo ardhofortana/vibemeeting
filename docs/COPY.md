@@ -26,7 +26,8 @@ Current names. Renames under discussion (such as Hint for Steer, Disagree for Pu
 | Them / You | Tags in the transcript for the other side and for you. Use them only as tags, never in sentences. In prompts they are fixed tokens and are never translated. |
 | Transcript | Live text of what both sides say, transcribed on this Mac. |
 | Call language | The language spoken in the call. Both sides are transcribed in it, and replies, questions and the recap use it unless you pick another language. |
-| Speech model | The on-device model macOS uses to transcribe one language. It downloads once per language. |
+| Speech model | The on-device model macOS uses to transcribe one language. It downloads once per language. There are two: the main speech model, used for every language it covers, and the Dictation model. |
+| Dictation model | The on-device model behind macOS Dictation. VibeMeeting uses it only for call languages the main speech model doesn't cover, such as Indonesian. Like any speech model, it downloads once per language. |
 | Reply | A short text VibeMeeting drafts for you to say next, in your own voice. The overlay lists replies under "Responses". Avoid "script" in new copy. |
 | Moves (intents) | What a reply does: Auto picks the best move; Answer answers the question; Clarify corrects politely or asks back; Add adds a point; Push back disagrees politely. The code and the overlay's hotkey hints say "intents"; new copy says "move". |
 | Steer | A short direction you type during the call to focus the next reply or questions. |

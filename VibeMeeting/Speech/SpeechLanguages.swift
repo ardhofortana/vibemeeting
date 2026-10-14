@@ -30,8 +30,10 @@ final class SpeechLanguages {
         supported = locales.all.sorted { MeetingLanguage.displayName(of: $0).localizedStandardCompare(MeetingLanguage.displayName(of: $1)) == .orderedAscending }
         installed = locales.installed(speech: speechInstalled.map { $0.identifier(.bcp47) }, dictation: dictationInstalled.map { $0.identifier(.bcp47) })
         // Automatic stays on the speech model, the more accurate one: an English
-        // only Dictation has (such as en-ID) gives the usual form instead.
-        automaticCallLocale = MeetingLanguage.defaultCallLocale(preferredLanguages: Locale.preferredLanguages, supported: locales.speech)
+        // only Dictation has (such as en-ID) gives the usual form instead. Without
+        // the speech model, Dictation hears every language.
+        let automaticCandidates = locales.speech.isEmpty ? locales.all : locales.speech
+        automaticCallLocale = MeetingLanguage.defaultCallLocale(preferredLanguages: Locale.preferredLanguages, supported: automaticCandidates)
     }
 
     /// The supported lists don't change while the app runs, so they're read once.
@@ -69,8 +71,11 @@ final class SpeechLanguages {
             dictation: dictation.map { $0.identifier(.bcp47) },
             speechEquivalents: equivalents
         )
-        // An empty answer may come from a speech service that isn't ready yet: ask again next time.
-        if !locales.all.isEmpty { cachedCallLocales = locales }
+        // A list may come back empty from a speech service that isn't ready yet,
+        // and a refresh cancelled when its window closes skips the equivalence
+        // checks: keep only a complete answer, and ask again next time.
+        let complete = !Task.isCancelled && !dictation.isEmpty && (!speechAvailable || !speech.isEmpty)
+        if complete { cachedCallLocales = locales }
         return locales
     }
 

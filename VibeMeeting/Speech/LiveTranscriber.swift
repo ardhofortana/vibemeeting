@@ -217,7 +217,10 @@ final class LiveTranscriber: @unchecked Sendable {
         let diagnostics = self.diagnostics
         let (recognizer, locale) = try await Self.makeTranscriber(for: self.locale)
         markLocaleInUse(locale.identifier(.bcp47))
-        diagnostics.update { $0.transcriberState = .preparingModel }
+        diagnostics.update {
+            $0.transcriberState = .preparingModel
+            $0.engine = recognizer.name
+        }
         try await Self.ensureAssets(for: recognizer, locale: locale) { fraction in
             diagnostics.update { $0.transcriberState = .downloadingModel(percent: Int((fraction * 100).rounded())) }
             onModelProgress?(fraction)

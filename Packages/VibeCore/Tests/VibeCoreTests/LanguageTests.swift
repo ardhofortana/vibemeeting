@@ -99,6 +99,9 @@ final class LanguageTests: XCTestCase {
         XCTAssertEqual(dictation.speech, [])
         XCTAssertEqual(dictation.dictationOnly, ["en-US", "id-ID"])
         XCTAssertEqual(dictation.installed(speech: ["en-US"], dictation: ["id-ID"]), ["id-ID"])
+        // Automatic then picks from Dictation's English variants.
+        let britishDictation = CallLocales(speech: [], dictation: ["en-US", "en-GB", "id-ID"])
+        XCTAssertEqual(MeetingLanguage.defaultCallLocale(preferredLanguages: ["en-GB"], supported: britishDictation.all), "en-GB")
     }
 
     func testWritingLanguagesHaveNames() {
